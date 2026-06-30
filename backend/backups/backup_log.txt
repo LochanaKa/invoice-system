@@ -1,0 +1,47 @@
+[2026-06-30 03:09:47] Starting backup → cc_backup_2026_06_30_03_09_47.sql.gz
+[2026-06-30T03:09:47.807956] API-triggered backup FAILED: [WinError 2] The system cannot find the file specified
+[2026-06-30 03:10:31] Starting backup → cc_backup_2026_06_30_03_10_31.sql.gz
+[2026-06-30T03:10:31.746513] API-triggered backup FAILED: [WinError 2] The system cannot find the file specified
+[2026-06-30T03:13:33.471235] API-triggered backup FAILED: pg_dump executable not found. Install PostgreSQL and add pg_dump.exe to PATH, or set PG_DUMP_PATH in backend/.env to the full path of pg_dump.exe.
+[2026-06-30 03:19:13] Starting backup → cc_backup_2026_06_30_03_19_13.sql.gz
+[2026-06-30 03:19:13] pg_dump not found; using SQLAlchemy fallback backup
+[2026-06-30T03:19:13.093231] API-triggered backup FAILED: No literal value renderer is available for literal value "[{'h': 2, 'i': 'kpis', 'w': 12, 'x': 0, 'y': 0, 'minH': 2, 'minW': 6}, {'h': 6, 'i': 'revenue-trend', 'w': 8, 'x': 0, 'y': 2, 'minH': 4, 'minW': 5}, { ... (386 characters truncated) ... 5, 'i': 'leaderboard', 'w': 8, 'x': 0, 'y': 8, 'minH': 3, 'minW': 5}, {'h': 5, 'i': 'recent-invoices', 'w': 4, 'x': 8, 'y': 13, 'minH': 3, 'minW': 4}]" with datatype JSONB
+[2026-06-30 03:23:36] Starting backup → cc_backup_2026_06_30_03_23_36.sql.gz
+[2026-06-30 03:23:36] FAILED — pg_dump error: C:\Program Files\PostgreSQL\18\bin\pg_dump.exe: illegal option -- quiet
+pg_dump: hint: Try "pg_dump --help" for more information.
+
+[2026-06-30T03:23:36.895257] API-triggered backup FAILED: pg_dump failed (exit 1): C:\Program Files\PostgreSQL\18\bin\pg_dump.exe: illegal option -- quiet
+pg_dump: hint: Try "pg_dump --help" for more information.
+
+[2026-06-30 03:26:29] Starting backup → cc_backup_2026_06_30_03_26_29.sql.gz
+[2026-06-30 03:26:29] FAILED — pg_dump error: C:\Program Files\PostgreSQL\18\bin\pg_dump.exe: illegal option -- q
+pg_dump: hint: Try "pg_dump --help" for more information.
+
+[2026-06-30T03:26:29.951327] API-triggered backup FAILED: pg_dump failed (exit 1): C:\Program Files\PostgreSQL\18\bin\pg_dump.exe: illegal option -- q
+pg_dump: hint: Try "pg_dump --help" for more information.
+
+[2026-06-30 03:27:18] Starting backup → cc_backup_2026_06_30_03_27_18.sql.gz
+[2026-06-30 03:27:18] FAILED — pg_dump error: C:\Program Files\PostgreSQL\18\bin\pg_dump.exe: illegal option -- q
+pg_dump: hint: Try "pg_dump --help" for more information.
+
+[2026-06-30T03:27:18.299879] API-triggered backup FAILED: pg_dump failed (exit 1): C:\Program Files\PostgreSQL\18\bin\pg_dump.exe: illegal option -- q
+pg_dump: hint: Try "pg_dump --help" for more information.
+
+[2026-06-30 03:28:31] Starting backup → cc_backup_2026_06_30_03_28_31.sql.gz
+[2026-06-30 03:28:31] pg_dump complete — raw size: 71.6 KB
+[2026-06-30 03:28:31] Compressed → 12.1 KB (83% smaller)
+[2026-06-30 03:28:32] SUCCESS — cc_backup_2026_06_30_03_28_31.sql.gz (12.1 KB)
+[2026-06-30 04:02:43] Starting backup → cc_backup_2026_06_30_04_02_43.sql.gz
+[2026-06-30 04:02:43] pg_dump complete — raw size: 68.1 KB
+[2026-06-30 04:02:43] Compressed → 11.3 KB (83% smaller)
+[2026-06-30 04:02:43] SUCCESS — cc_backup_2026_06_30_04_02_43.sql.gz (11.3 KB)
+[2026-06-30 04:09:45] Starting backup → cc_backup_2026_06_30_04_09_45.sql.gz
+[2026-06-30 04:09:45] psql not found; using SQLAlchemy fallback backup to ensure restore compatibility
+[2026-06-30 04:09:45] SQLAlchemy backup complete — raw size: 141.5 KB
+[2026-06-30 04:09:45] Compressed → 11.0 KB (92% smaller)
+[2026-06-30 04:09:45] SUCCESS — cc_backup_2026_06_30_04_09_45.sql.gz (11.0 KB)
+[2026-06-30 10:44:04] Starting backup → cc_backup_2026_06_30_10_44_04.sql.gz
+[2026-06-30 10:44:04] psql not found; using SQLAlchemy fallback backup to ensure restore compatibility
+[2026-06-30 10:44:04] SQLAlchemy backup complete — raw size: 143.2 KB
+[2026-06-30 10:44:04] Compressed → 11.1 KB (92% smaller)
+[2026-06-30 10:44:04] SUCCESS — cc_backup_2026_06_30_10_44_04.sql.gz (11.1 KB)

@@ -1,0 +1,22 @@
+{
+  // Tell VSCode's built-in CSS linter to ignore unknown at-rules like
+  // @tailwind, @apply, @layer — these are valid PostCSS/Tailwind syntax
+  // but the default linter doesn't know them.
+  "css.lint.unknownAtRules": "ignore",
+  "css.validate": false,
+
+  // Keep SCSS and Less validation on (not used here, but safe to keep)
+  "scss.validate": true,
+  "less.validate": true,
+
+  // Use the Tailwind CSS IntelliSense extension for CSS files
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+
+  // Prettier/format settings
+  "editor.formatOnSave": true,
+  "[javascript]":  { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[css]": { "editor.defaultFormatter": "esbenp.prettier-vscode" }
+}

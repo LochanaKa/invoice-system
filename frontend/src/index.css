@@ -1,0 +1,132 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Global base ─────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #f0f4ff;
+}
+
+/* ── Branded scrollbar ───────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f0f4ff;
+}
+::-webkit-scrollbar-thumb {
+  background: #aab9eb;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #1F3C8A;
+}
+
+.dashboard-grid {
+  position: relative;
+  width: 100%;
+}
+
+.dashboard-grid-item {
+  position: absolute;
+  min-width: 0;
+  transition: left 160ms ease, top 160ms ease, width 160ms ease, height 160ms ease;
+}
+
+.dashboard-grid-editing .dashboard-grid-item {
+  transition: box-shadow 160ms ease;
+}
+
+.dashboard-grid-editing .dashboard-grid-item:active {
+  z-index: 30;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+}
+
+.dashboard-resize-handle {
+  position: absolute;
+  z-index: 25;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.dashboard-grid-editing .dashboard-resize-handle {
+  opacity: 1;
+}
+
+.dashboard-resize-handle-s {
+  bottom: 4px;
+  left: 50%;
+  width: 48px;
+  height: 12px;
+  margin-left: -24px;
+  cursor: ns-resize;
+}
+
+.dashboard-resize-handle-e {
+  top: 50%;
+  right: 4px;
+  width: 12px;
+  height: 48px;
+  margin-top: -24px;
+  cursor: ew-resize;
+}
+
+.dashboard-resize-handle-se {
+  bottom: 2px;
+  right: 2px;
+  width: 26px;
+  height: 26px;
+  cursor: nwse-resize;
+}
+
+.dashboard-resize-handle-s::after,
+.dashboard-resize-handle-e::after,
+.dashboard-resize-handle-se::after {
+  content: "";
+  position: absolute;
+  border: 0;
+  background: #1F3C8A;
+  opacity: 0.45;
+}
+
+.dashboard-resize-handle-s::after {
+  left: 8px;
+  right: 8px;
+  bottom: 3px;
+  height: 4px;
+  border-radius: 9999px;
+}
+
+.dashboard-resize-handle-e::after {
+  top: 8px;
+  bottom: 8px;
+  right: 3px;
+  width: 4px;
+  border-radius: 9999px;
+}
+
+.dashboard-resize-handle-se::after {
+  right: 7px;
+  bottom: 7px;
+  width: 12px;
+  height: 12px;
+  border-right: 3px solid #1F3C8A;
+  border-bottom: 3px solid #1F3C8A;
+  background: transparent;
+  opacity: 0.7;
+}
