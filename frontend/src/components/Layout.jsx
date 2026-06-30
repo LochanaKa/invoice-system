@@ -44,6 +44,14 @@ function CCLogo({ size = 36 }) {
   );
 }
 
+function getGreeting() {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return "Good Morning";
+  if (hour < 17) return "Good Afternoon";
+  return "Good Evening";
+}
+
 export default function Layout() {
   return (
     <div className="flex h-screen font-sans" style={{ background: "#f0f4ff" }}>
@@ -185,21 +193,23 @@ export default function Layout() {
             </span>
           </div>
 
-          {/* Right: tech badge */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium px-3 py-1 rounded-full border"
+          {/* Right: attractive greeting badge */}
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border shadow-sm text-sm font-semibold"
                   style={{
-                    background:   "#eef1fb",
-                    borderColor:  "#aab9eb",
-                    color:        "#1F3C8A",
+                    background: "linear-gradient(135deg, #eef3ff 0%, #f7f9ff 100%)",
+                    borderColor: "#c3d0f8",
+                    color: "#1F3C8A",
+                    boxShadow: "0 4px 12px rgba(31, 60, 138, 0.08)",
                   }}>
-              PostgreSQL · FastAPI · React
+              <span className="text-base leading-none">☀️</span>
+              <span>{getGreeting()}</span>
             </span>
             {/* Small animated green dot — "live" indicator */}
-            <span className="relative flex h-2 w-2">
+            <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
                     style={{ background: "#27AE60" }} />
-              <span className="relative inline-flex rounded-full h-2 w-2"
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5"
                     style={{ background: "#27AE60" }} />
             </span>
           </div>

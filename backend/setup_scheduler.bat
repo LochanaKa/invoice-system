@@ -14,7 +14,7 @@
 :: ============================================================
 
 :: ── EDIT THIS PATH to match your backend folder ─────────────
-set BACKEND_DIR=C:\Users\Lochana karunarathna\Documents\Portfolio\#Projects\Creative Computers project\Invoicing-v03\backend
+set BACKEND_DIR=C:\Users\Lochana karunarathna\Documents\Projects\Creative Computers project\Invoice-System\backend
 
 :: ── EDIT THIS if Python is not in your PATH ──────────────────
 set PYTHON=python
