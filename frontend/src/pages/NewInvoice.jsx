@@ -33,6 +33,8 @@ export default function NewInvoice() {
     po_number:        "",
     warranty:         "",
     contact_name:     "",
+    customer_tin:     "",
+    customer_phone:   "",
     customer_id:      "",
     rep_id:           "",
     credit_balance:   "0",
@@ -134,7 +136,14 @@ export default function NewInvoice() {
       const match = customers.find(c => String(c.id) === String(form.customer_id));
       if (match) {
         setCustSearch(match.name);
+        setForm((f) => ({
+          ...f,
+          customer_tin: match.tin || "",
+          customer_phone: match.phone || "",
+        }));
       }
+    } else if (!form.customer_id) {
+      setForm((f) => ({ ...f, customer_tin: "", customer_phone: "" }));
     }
   }, [form.customer_id, customers]);
 
@@ -148,7 +157,12 @@ export default function NewInvoice() {
   }, [form.route_id, routes]);
 
   function handleSelectCustomer(cust) {
-    setForm((f) => ({ ...f, customer_id: String(cust.id) }));
+    setForm((f) => ({
+      ...f,
+      customer_id: String(cust.id),
+      customer_tin: cust.tin || "",
+      customer_phone: cust.phone || "",
+    }));
     setCustSearch(cust.name);
     setIsOpen(false);
   }
@@ -156,7 +170,12 @@ export default function NewInvoice() {
   function handleSearchChange(e) {
     const val = e.target.value;
     setCustSearch(val);
-    setForm((f) => ({ ...f, customer_id: "" })); // Invalidate current selection until selected
+    setForm((f) => ({
+      ...f,
+      customer_id: "",
+      customer_tin: "",
+      customer_phone: "",
+    })); // Invalidate current selection until selected
     setIsOpen(true);
   }
 
@@ -185,7 +204,12 @@ export default function NewInvoice() {
         phone: quickAddPhone.trim() || null,
       });
       setCustomers((prev) => [...prev, newCust]);
-      setForm((f) => ({ ...f, customer_id: String(newCust.id) }));
+      setForm((f) => ({
+        ...f,
+        customer_id: String(newCust.id),
+        customer_tin: "",
+        customer_phone: newCust.phone || "",
+      }));
       setCustSearch(newCust.name);
       setShowQuickAdd(false);
     } catch (err) {
@@ -257,6 +281,8 @@ export default function NewInvoice() {
         po_number:        form.po_number   || null,
         warranty:         form.warranty    || null,
         contact_name:     form.contact_name || null,
+        customer_tin:     form.customer_tin?.trim() || null,
+        customer_phone:   form.customer_phone?.trim() || null,
         customer_id:      parseInt(form.customer_id),
         rep_id:           form.rep_id ? parseInt(form.rep_id) : null,
         credit_balance:   parseFloat(form.credit_balance) || 0,
@@ -463,12 +489,6 @@ export default function NewInvoice() {
                 </div>
               )}
             </div>
-            <div>
-              <label className={lbl}>Warranty</label>
-              <input value={form.warranty}
-                     onChange={(e) => setForm((f) => ({ ...f, warranty: e.target.value }))}
-                     placeholder="e.g. 1 Year, 3 Years" className={inp} />
-            </div>
           </div>
         </div>
 
@@ -503,15 +523,12 @@ export default function NewInvoice() {
                         className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-gray-700 transition-colors flex flex-col border-b border-gray-50 last:border-b-0"
                       >
                         <span className="font-medium text-sm">{c.name}</span>
-                        {c.phone && <span className="text-xs text-gray-400 mt-0.5">{c.phone}</span>}
+                        <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-400">
+                          {c.tin && <span>TIN: {c.tin}</span>}
+                          {c.phone && <span>Phone: {c.phone}</span>}
+                        </div>
                       </button>
                     ))}
-
-                  {customers.filter((c) => c.name.toLowerCase().includes(custSearch.toLowerCase())).length === 0 && (
-                    <div className="px-4 py-3 text-sm text-gray-500 italic">
-                      No matching customers found
-                    </div>
-                  )}
 
                   {custSearch.trim() && !customers.some(c => c.name.toLowerCase() === custSearch.trim().toLowerCase()) && (
                     <button
@@ -537,6 +554,20 @@ export default function NewInvoice() {
               <input value={form.contact_name}
                      onChange={(e) => setForm((f) => ({ ...f, contact_name: e.target.value }))}
                      placeholder="The Manager / The Accountant"
+                     className={inp} />
+            </div>
+            <div>
+              <label className={lbl}>Customer TIN</label>
+              <input value={form.customer_tin}
+                     onChange={(e) => setForm((f) => ({ ...f, customer_tin: e.target.value }))}
+                     placeholder="Enter customer TIN"
+                     className={inp} />
+            </div>
+            <div>
+              <label className={lbl}>Customer Contact Number</label>
+              <input value={form.customer_phone}
+                     onChange={(e) => setForm((f) => ({ ...f, customer_phone: e.target.value }))}
+                     placeholder="Auto-filled from saved customer details"
                      className={inp} />
             </div>
           </div>
@@ -760,7 +791,21 @@ export default function NewInvoice() {
           </div>
         </div>
 
-        {/* ── Section 5: Remarks ──────────────────────────────── */}
+        {/* ── Section 5: Warranty ─────────────────────────────── */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">Warranty</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={lbl}>Warranty</label>
+              <input value={form.warranty}
+                     onChange={(e) => setForm((f) => ({ ...f, warranty: e.target.value }))}
+                     placeholder="e.g. 1 Year, 3 Years"
+                     className={inp} />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Section 6: Remarks ──────────────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <label className={lbl}>Remarks (optional)</label>
           <textarea value={form.remarks} rows={2}

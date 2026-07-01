@@ -172,6 +172,8 @@ class InvoiceCreate(BaseModel):
     credit_balance:   Decimal = Decimal("0.00")
     remarks:          Optional[str] = None
     contact_name:     Optional[str] = None
+    customer_tin:     Optional[str] = None
+    customer_phone:   Optional[str] = None
     due_date:         Optional[date] = None
     po_number:        Optional[str] = None
     warranty:         Optional[str] = None
@@ -210,7 +212,9 @@ class InvoiceListItem(BaseModel):
     is_vat_posted:    bool
     warranty:         Optional[str] = None
     customer_name:    Optional[str] = None   # joined from customers table
-    rep_name:         Optional[str] = None   # joined from reps table
+    customer_tin:     Optional[str] = None
+    customer_phone:   Optional[str] = None
+    rep_name:         Optional[str] = None   # joined via reps table
     route_name:       Optional[str] = None   # joined via customer → route
 
     model_config = {"from_attributes": True}
@@ -222,6 +226,8 @@ class InvoiceDetail(InvoiceListItem):
     rep_id:        Optional[int]  = None
     appointment_id:Optional[int]  = None
     contact_name:  Optional[str]  = None
+    customer_tin:  Optional[str]  = None
+    customer_phone:Optional[str]  = None
     due_date:      Optional[date] = None
     po_number:     Optional[str]  = None
     remarks:       Optional[str]  = None

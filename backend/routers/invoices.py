@@ -231,6 +231,28 @@ def generate_next_invoice_number(db: Session, category: str, service_type: str) 
         return f"{prefix}{next_num:05d}"
 
 
+def resolve_invoice_customer_details(payload: InvoiceCreate, customer: Customer) -> tuple[Optional[str], Optional[str]]:
+    """Resolve the customer TIN/phone to use for invoice rendering.
+
+    If the invoice form provides a non-empty value, that takes precedence.
+    Empty invoice values fall back to the saved customer record values.
+    """
+    tin = None
+    phone = None
+
+    if payload.customer_tin is not None:
+        tin = payload.customer_tin.strip() or None
+    if payload.customer_phone is not None:
+        phone = payload.customer_phone.strip() or None
+
+    if tin is None and getattr(customer, "tin", None):
+        tin = str(customer.tin).strip() or None
+    if phone is None and getattr(customer, "phone", None):
+        phone = str(customer.phone).strip() or None
+
+    return tin, phone
+
+
 @router.get("/next-number")
 def get_next_number(
     category: str = Query(..., description="'ALL_INC' or 'VAT'"),
@@ -308,6 +330,8 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
         service_type         = inv.service_type,
         invoice_date         = inv.invoice_date,
         customer_id          = inv.customer_id,
+        customer_tin         = inv.customer_tin,
+        customer_phone       = inv.customer_phone,
         rep_id               = inv.rep_id,
         appointment_id       = inv.appointment_id,
         amount               = inv.amount,
@@ -362,6 +386,8 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
     customer = db.query(Customer).filter(Customer.id == payload.customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+
+    resolved_tin, resolved_phone = resolve_invoice_customer_details(payload, customer)
 
     # ── Resolve rates: use per-invoice overrides or fall back to globals ─────
     default_sscl, default_vat, default_margin = _get_settings_defaults(db)
@@ -430,6 +456,8 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
         rep_id           = payload.rep_id,
         appointment_id   = payload.appointment_id,
         contact_name     = payload.contact_name,
+        customer_tin     = resolved_tin,
+        customer_phone   = resolved_phone,
         due_date         = payload.due_date,
         po_number        = payload.po_number,
         warranty         = payload.warranty,

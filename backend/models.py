@@ -184,6 +184,8 @@ class Invoice(Base):
     remarks          = Column(Text)
     is_vat_posted    = Column(Boolean, default=False)
     contact_name     = Column(String(100))
+    customer_tin     = Column(String(50))
+    customer_phone   = Column(String(30))
     due_date         = Column(Date)
     po_number        = Column(String(50))
     warranty         = Column(String(100))

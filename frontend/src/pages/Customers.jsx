@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Search, RefreshCw, ShieldCheck, Pencil, Trash2,
          X, RotateCcw, AlertTriangle, Users } from "lucide-react";
-import { getCustomers, updateCustomer, deleteCustomer,
+import { getCustomers, createCustomer, updateCustomer, deleteCustomer,
          reactivateCustomer, getLookups } from "../services/api";
 
 export default function Customers() {
@@ -16,6 +16,8 @@ export default function Customers() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isSaving,     setIsSaving]     = useState(false);
   const [isDeleting,   setIsDeleting]   = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isCreating,   setIsCreating]   = useState(false);
 
   const [editName,    setEditName]    = useState("");
   const [editPhone,   setEditPhone]   = useState("");
@@ -23,6 +25,14 @@ export default function Customers() {
   const [editTin,     setEditTin]     = useState("");
   const [editRouteId, setEditRouteId] = useState("");
   const [editVat,     setEditVat]     = useState(false);
+
+  const [createName,    setCreateName]    = useState("");
+  const [createPhone,   setCreatePhone]   = useState("");
+  const [createAddress, setCreateAddress] = useState("");
+  const [createTin,     setCreateTin]     = useState("");
+  const [createRouteId, setCreateRouteId] = useState("");
+  const [createVat,     setCreateVat]     = useState(false);
+  const [createError,   setCreateError]   = useState(null);
 
   useEffect(() => { fetchCustomers(); }, [search, vatOnly, showInactive]);
   useEffect(() => { loadLookups(); }, []);
@@ -77,6 +87,40 @@ export default function Customers() {
     } finally { setIsSaving(false); }
   };
 
+  const handleSaveCreate = async (e) => {
+    e.preventDefault();
+    setCreateError(null);
+    if (!createName.trim()) {
+      setCreateError("Customer name is required.");
+      return;
+    }
+    setIsCreating(true);
+    try {
+      await createCustomer({
+        name:              createName.trim(),
+        phone:             createPhone.trim() || null,
+        address:           createAddress.trim() || null,
+        tin:               createTin.trim() || null,
+        route_id:          createRouteId ? Number(createRouteId) : null,
+        is_vat_registered: createVat,
+      });
+      setShowCreateModal(false);
+      setCreateName("");
+      setCreatePhone("");
+      setCreateAddress("");
+      setCreateTin("");
+      setCreateRouteId("");
+      setCreateVat(false);
+      fetchCustomers();
+    } catch (err) {
+      console.error("Create customer error:", err?.response?.data ?? err);
+      const detail = err?.response?.data?.detail ?? err?.message ?? "Unknown error";
+      setCreateError(`Failed to create customer: ${detail}`);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setIsDeleting(true);
@@ -109,6 +153,16 @@ export default function Customers() {
             <Users size={20} /> Customers
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">{customers.length} accounts listed</p>
+        </div>
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 text-sm font-semibold text-white rounded-xl transition-colors"
+            style={{ background: "#1F3C8A" }}
+          >
+            Add Customer
+          </button>
         </div>
       </div>
 
@@ -275,6 +329,109 @@ export default function Customers() {
           </div>
         )}
       </div>
+
+      {/* ── Create Customer Modal ───────────────────────────────── */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border overflow-hidden"
+               style={{ borderColor: "#d5dcf5" }}>
+            <div className="px-6 py-4 flex items-center justify-between border-b"
+                 style={{
+                   borderColor: "#eef1fb",
+                   background: "linear-gradient(90deg, #1F3C8A 0%, #2950cd 100%)",
+                 }}>
+              <h3 className="text-base font-bold text-white">Add New Customer</h3>
+              <button onClick={() => setShowCreateModal(false)} disabled={isCreating}
+                      className="text-blue-200 hover:text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCreate} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1.5"
+                       style={{ color: "#1F3C8A" }}>
+                  Customer Name *
+                </label>
+                <input type="text" required value={createName}
+                       onChange={(e) => setCreateName(e.target.value)}
+                       className={inputCls}
+                       style={{ "--tw-ring-color": "#1F3C8A" }} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider mb-1.5"
+                         style={{ color: "#1F3C8A" }}>Phone</label>
+                  <input type="text" value={createPhone}
+                         onChange={(e) => setCreatePhone(e.target.value)}
+                         className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider mb-1.5"
+                         style={{ color: "#1F3C8A" }}>TIN</label>
+                  <input type="text" value={createTin}
+                         onChange={(e) => setCreateTin(e.target.value)}
+                         className={inputCls} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1.5"
+                       style={{ color: "#1F3C8A" }}>Address</label>
+                <textarea rows={3} value={createAddress}
+                          onChange={(e) => setCreateAddress(e.target.value)}
+                          className={inputCls} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1.5"
+                       style={{ color: "#1F3C8A" }}>Route</label>
+                <select value={createRouteId} onChange={(e) => setCreateRouteId(e.target.value)}
+                        className={inputCls + " bg-white"}>
+                  <option value="">No Route Assigned</option>
+                  {routes.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-3 border-t pt-3"
+                   style={{ borderColor: "#eef1fb" }}>
+                <input type="checkbox" id="createVat" checked={createVat}
+                       onChange={(e) => setCreateVat(e.target.checked)}
+                       style={{ accentColor: "#1F3C8A" }}
+                       className="w-4 h-4 rounded" />
+                <label htmlFor="createVat" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  VAT Registered Customer
+                </label>
+              </div>
+
+              {createError && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">
+                  {createError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 border-t pt-4"
+                   style={{ borderColor: "#eef1fb" }}>
+                <button type="button" onClick={() => setShowCreateModal(false)} disabled={isCreating}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100
+                                   hover:bg-gray-200 rounded-xl transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={isCreating}
+                        className="px-5 py-2 text-sm font-bold text-white rounded-xl
+                                   flex items-center gap-2 transition-colors"
+                        style={{ background: isCreating ? "#7f96e1" : "#1F3C8A" }}>
+                  {isCreating && <RefreshCw size={14} className="animate-spin" />}
+                  Create Customer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ── Edit Customer Modal ─────────────────────────────────── */}
       {editTarget && (

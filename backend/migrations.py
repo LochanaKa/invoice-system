@@ -198,6 +198,14 @@ def run_startup_migrations(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS idx_invoices_route ON invoices(route_id)"
         ))
         conn.execute(text(
+            "ALTER TABLE invoices "
+            "ADD COLUMN IF NOT EXISTS customer_tin VARCHAR(50)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE invoices "
+            "ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(30)"
+        ))
+        conn.execute(text(
             "ALTER TABLE payments "
             "ADD COLUMN IF NOT EXISTS recorded_by_rep_id INTEGER REFERENCES reps(id)"
         ))

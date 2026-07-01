@@ -1,374 +1,488 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<style>
-/* ── Reset ─────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Yellowtail&display=swap');
-* { margin:0; padding:0; box-sizing:border-box; }
+  <meta charset="UTF-8">
+  <style>
+    /* ── Reset ─────────────────────────────────────────────────── */
+    @import url('https://fonts.googleapis.com/css2?family=Yellowtail&display=swap');
 
-/* ── A4 page — no margin, WeasyPrint owns the page ─────────── */
-@page {
-  size: A4 portrait;
-  margin: 0;
-}
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-html, body {
-  width: 210mm;
-  height: 297mm;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 7.5pt;
-  color: #000;
-  background: #fff;
-}
+    /* ── A4 page — no margin, WeasyPrint owns the page ─────────── */
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
 
-/* ── Outer page — plain white, no side bars ─────────────────── */
-.page {
-  position: relative;
-  width:  210mm;
-  height: 297mm;
-  overflow: hidden;
-  background: #fff;
-}
+    html,
+    body {
+      width: 210mm;
+      height: 297mm;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 7.5pt;
+      color: #000;
+      background: #fff;
+    }
 
-/* ════════════════════════════════════════════════
+    /* ── Outer page — plain white, no side bars ─────────────────── */
+    .page {
+      position: relative;
+      width: 210mm;
+      height: 297mm;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    /* ════════════════════════════════════════════════
    DECORATIVE TOP-RIGHT COLOUR STRIP (CC brand colours)
    Sits in the top-right margin only — NOT a full-height bar.
 ════════════════════════════════════════════════ */
-.deco-strip {
-  position: absolute;
-  left: 193.4mm;
-  top: 6.1mm;
-  width: 8.4mm;
-  height: 61.2mm;
-  background: linear-gradient(
-    to bottom,
-    #4BA178 0%,   #4BA178 36.7%,
-    #234791 36.7%, #234791 70.1%,
-    #3A90CB 70.1%, #3A90CB 100%
-  );
-}
+    .deco-strip {
+      position: absolute;
+      left: 193.4mm;
+      top: 6.1mm;
+      width: 8.4mm;
+      height: 61.2mm;
+      background: linear-gradient(to bottom,
+          #4BA178 0%, #4BA178 36.7%,
+          #234791 36.7%, #234791 70.1%,
+          #3A90CB 70.1%, #3A90CB 100%);
+    }
 
-/* Second colour band — left margin, alongside the customer-info/items/
+    /* Second colour band — left margin, alongside the customer-info/items/
    warranty sections. Fixed page position (independent of table content),
    same brand colours as the header strip. */
-.deco-strip-left {
-  position: absolute;
-  left: 5.3mm;
-  top: 60.7mm;
-  width: 9.8mm;
-  height: 144.8mm;
-  background: linear-gradient(
-    to bottom,
-    #4BA178 0%,   #4BA178 35.9%,
-    #234791 35.9%, #234791 68%,
-    #3A90CB 68%,   #3A90CB 100%
-  );
-}
+    .deco-strip-left {
+      position: absolute;
+      left: 5.3mm;
+      top: 60.7mm;
+      width: 9.8mm;
+      height: 144.8mm;
+      background: linear-gradient(to bottom,
+          #4BA178 0%, #4BA178 35.9%,
+          #234791 35.9%, #234791 68%,
+          #3A90CB 68%, #3A90CB 100%);
+    }
 
-/* Contact icon circles — attached to the strip, one per contact line */
-.icon-circle {
-  position: absolute;
-  left: 186.45mm;
-  width: 5.7mm;
-  height: 5.7mm;
-  border-radius: 50%;
-  background: #234791;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.icon-circle svg { width: 60%; height: 60%; fill: #fff; }
-.icon-pin   { top: 19.65mm; }
-.icon-phone { top: 32.15mm; }
-.icon-email { top: 44.65mm; }
+    /* Contact icon circles — attached to the strip, one per contact line */
+    .icon-circle {
+      position: absolute;
+      left: 186.45mm;
+      width: 5.7mm;
+      height: 5.7mm;
+      border-radius: 50%;
+      background: #234791;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-/* Right-aligned contact text block, vertically matched to the icon circles */
-.contact-block {
-  position: absolute;
-  top: 16.25mm;
-  right: 25.5mm;
-  width: 62mm;
-  display: flex;
-  flex-direction: column;
-}
-.contact-block .c-row {
-  height: 12.5mm;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  text-align: right;
-  font-size: 6.8pt;
-  line-height: 1.45;
-  color: #222;
-}
+    .icon-circle svg {
+      width: 60%;
+      height: 60%;
+      fill: #fff;
+    }
 
-/* ════════════════════════════════════════════════
+    .icon-pin {
+      top: 19.65mm;
+    }
+
+    .icon-phone {
+      top: 32.15mm;
+    }
+
+    .icon-email {
+      top: 44.65mm;
+    }
+
+    /* Right-aligned contact text block, vertically matched to the icon circles */
+    .contact-block {
+      position: absolute;
+      top: 16.25mm;
+      right: 25.5mm;
+      width: 62mm;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .contact-block .c-row {
+      height: 12.5mm;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      text-align: right;
+      font-size: 6.8pt;
+      line-height: 1.45;
+      color: #222;
+    }
+
+    /* ════════════════════════════════════════════════
    CONTENT — flex column filling the page
 ════════════════════════════════════════════════ */
-.content {
-  position: relative;
-  height: 100%;
-  padding: 5mm 6mm 3mm 17.7mm;
-  display: flex;
-  flex-direction: column;
-}
+    .content {
+      position: relative;
+      height: 100%;
+      padding: 5mm 6mm 3mm 17.7mm;
+      display: flex;
+      flex-direction: column;
+    }
 
-/* ── HEADER: logo only — contact block/strip are page-absolute ─ */
-.header {
-  position: relative;
-  min-height: 46mm;
-}
+    /* ── HEADER: logo only — contact block/strip are page-absolute ─ */
+    .header {
+      position: relative;
+      min-height: 46mm;
+    }
 
-.logo-area { width: 60%; padding-top: 1mm; }
-.logo-area img {
-  width: 51mm;
-  max-height: 43mm;
-  object-fit: contain;
-}
+    .logo-area {
+      width: 60%;
+      padding-top: 1mm;
+    }
 
-/* Fallback text logo if image missing */
-.logo-text-cc   { font-size:15pt; font-weight:900; color:#234791; line-height:1; }
-.logo-text-rest { font-size:9pt;  font-weight:700; color:#4BA178; letter-spacing:1pt; }
+    .logo-area img {
+      width: 51mm;
+      max-height: 43mm;
+      object-fit: contain;
+    }
 
-/* ── Body tables sit on a slightly narrower right margin than the
+    /* Fallback text logo if image missing */
+    .logo-text-cc {
+      font-size: 15pt;
+      font-weight: 900;
+      color: #234791;
+      line-height: 1;
+    }
+
+    .logo-text-rest {
+      font-size: 9pt;
+      font-weight: 700;
+      color: #4BA178;
+      letter-spacing: 1pt;
+    }
+
+    /* ── Body tables sit on a slightly narrower right margin than the
      header, matching the source template's asymmetric page margins. ── */
-.body-w { width: calc(100% - 12.5mm); }
+    .body-w {
+      width: calc(100% - 12.5mm);
+    }
 
-/* ════════════════════════════════════════════════
+    /* ════════════════════════════════════════════════
    INVOICE TYPE TITLE
 ════════════════════════════════════════════════ */
-.inv-title-block { margin-bottom: 2mm; }
-.inv-title {
-  font-size: 11pt;
-  font-weight: bold;
-  text-decoration: underline;
-  letter-spacing: 0.3pt;
-}
-.vat-no { font-size: 6.8pt; color: #333; margin-top: 0.5mm; }
+    .inv-title-block {
+      margin-bottom: 2mm;
+    }
 
-/* ════════════════════════════════════════════════
+    .inv-title {
+      font-size: 11pt;
+      font-weight: bold;
+      text-decoration: underline;
+      letter-spacing: 0.3pt;
+    }
+
+    .vat-no {
+      font-size: 6.8pt;
+      color: #333;
+      margin-top: 0.5mm;
+    }
+
+    /* ════════════════════════════════════════════════
    CUSTOMER / INVOICE INFO — 2-column table
 ════════════════════════════════════════════════ */
-.info-tbl {
-  width: calc(100% - 12.5mm);
-  border-collapse: collapse;
-  margin-bottom: 1.5mm;
-}
-.info-tbl td {
-  border: 0.6pt solid #555;
-  padding: 1.1mm 2mm;
-  vertical-align: middle;
-  font-size: 7pt;
-}
-.lbl  { font-weight: bold; width: 22%; white-space: nowrap; }
-.val  { width: 36%; color: #b22222; }          /* red — matches your template */
-.rlbl { font-weight: bold; width: 18%; background:#f2f2f2;
-        text-align:right; white-space:nowrap; }
-.rval { width: 24%; font-weight: bold; color: #b22222; }
+    .info-tbl {
+      width: calc(100% - 12.5mm);
+      border-collapse: collapse;
+      margin-bottom: 1.5mm;
+    }
 
-/* ════════════════════════════════════════════════
+    .info-tbl td {
+      border: 0.6pt solid #555;
+      padding: 1.1mm 2mm;
+      vertical-align: middle;
+      font-size: 7pt;
+    }
+
+    .lbl {
+      font-weight: bold;
+      width: 22%;
+      white-space: nowrap;
+    }
+
+    .val {
+      width: 36%;
+      color: #b22222;
+    }
+
+    /* red — matches your template */
+    .rlbl {
+      font-weight: bold;
+      width: 18%;
+      background: #f2f2f2;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .rval {
+      width: 24%;
+      font-weight: bold;
+      color: #b22222;
+    }
+
+    /* ════════════════════════════════════════════════
    LINE ITEMS TABLE
 ════════════════════════════════════════════════ */
-.items-tbl {
-  width: calc(100% - 12.5mm);
-  border-collapse: collapse;
-}
-.items-tbl th {
-  background: #e0e0e0;
-  border: 0.6pt solid #555;
-  padding: 1.5mm 2mm;
-  font-size: 7.5pt;
-  font-weight: bold;
-  text-align: left;
-  white-space: nowrap;
-}
-.items-tbl th.r { text-align: right; }
-.items-tbl td {
-  border: 0.6pt solid #555;
-  padding: 1.1mm 2mm;
-  font-size: 7pt;
-  vertical-align: top;
-}
-.items-tbl td.r { text-align: right; }
-.items-tbl td.c { text-align: center; }
+    .items-tbl {
+      width: calc(100% - 12.5mm);
+      border-collapse: collapse;
+    }
 
-/* Empty filler rows */
-.filler td { height: 7mm; }
+    .items-tbl th {
+      background: #e0e0e0;
+      border: 0.6pt solid #555;
+      padding: 1.5mm 2mm;
+      font-size: 7.5pt;
+      font-weight: bold;
+      text-align: left;
+      white-space: nowrap;
+    }
 
-/* Total rows */
-.row-total td {
-  font-weight: bold;
-  background: #f0f0f0;
-  text-align: center;
-  font-size: 7.5pt;
-  border: 0.6pt solid #555;
-}
-.row-total td.amt { text-align: right; }
-.row-grand td {
-  font-weight: bold;
-  background: #e0e0e0;
-  text-align: center;
-  font-size: 8pt;
-  border: 0.6pt solid #555;
-}
-.row-grand td.amt { text-align: right; font-size: 8.5pt; }
+    .items-tbl th.r {
+      text-align: right;
+    }
 
-/* ════════════════════════════════════════════════
+    .items-tbl td {
+      border: 0.6pt solid #555;
+      padding: 1.1mm 2mm;
+      font-size: 7pt;
+      vertical-align: top;
+    }
+
+    .items-tbl td.r {
+      text-align: right;
+    }
+
+    .items-tbl td.c {
+      text-align: center;
+    }
+
+    /* Empty filler rows */
+    .filler td {
+      height: 7mm;
+    }
+
+    /* Total rows */
+    .row-total td {
+      font-weight: bold;
+      background: #f0f0f0;
+      text-align: center;
+      font-size: 7.5pt;
+      border: 0.6pt solid #555;
+    }
+
+    .row-total td.amt {
+      text-align: right;
+    }
+
+    .row-grand td {
+      font-weight: bold;
+      background: #e0e0e0;
+      text-align: center;
+      font-size: 8pt;
+      border: 0.6pt solid #555;
+    }
+
+    .row-grand td.amt {
+      text-align: right;
+      font-size: 8.5pt;
+    }
+
+    /* ════════════════════════════════════════════════
    WARRANTY
 ════════════════════════════════════════════════ */
-.warranty-tbl {
-  width: calc(100% - 12.5mm);
-  border-collapse: collapse;
-  margin-top: 1.5mm;
-}
-.warranty-tbl td {
-  border: 0.6pt solid #555;
-  padding: 1.1mm 3mm;
-  font-size: 7pt;
-  font-weight: bold;
-  text-align: center;
-}
+    .warranty-tbl {
+      width: calc(100% - 12.5mm);
+      border-collapse: collapse;
+      margin-top: 1.5mm;
+    }
 
-/* ════════════════════════════════════════════════
+    .warranty-tbl td {
+      border: 0.6pt solid #555;
+      padding: 1.1mm 3mm;
+      font-size: 7pt;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    /* ════════════════════════════════════════════════
    TERMS & CONDITIONS
 ════════════════════════════════════════════════ */
-.tc-tbl {
-  width: calc(100% - 12.5mm);
-  border-collapse: collapse;
-  margin-top: 1mm;
-}
-.tc-tbl td {
-  border: 0.6pt solid #555;
-  padding: 1mm 2mm;
-  font-size: 5.8pt;
-  vertical-align: top;
-}
-.tc-label {
-  width: 14%;
-  font-weight: bold;
-  background: #f2f2f2;
-  white-space: nowrap;
-}
-.tc-list { padding-left: 0; list-style: none; }
-.tc-list li { margin-bottom: 0.4mm; line-height: 1.25; padding-left: 0; }
-.tc-list li::before { content: "\25BA  "; font-size: 5pt; }
+    .tc-tbl {
+      width: calc(100% - 12.5mm);
+      border-collapse: collapse;
+      margin-top: 1mm;
+    }
 
-/* ════════════════════════════════════════════════
+    .tc-tbl td {
+      border: 0.6pt solid #555;
+      padding: 1mm 2mm;
+      font-size: 5.8pt;
+      vertical-align: top;
+    }
+
+    .tc-label {
+      width: 14%;
+      font-weight: bold;
+      background: #f2f2f2;
+      white-space: nowrap;
+    }
+
+    .tc-list {
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .tc-list li {
+      margin-bottom: 0.4mm;
+      line-height: 1.25;
+      padding-left: 0;
+    }
+
+    .tc-list li::before {
+      content: "\25BA  ";
+      font-size: 5pt;
+    }
+
+    /* ════════════════════════════════════════════════
    SIGNATURE BLOCK
 ════════════════════════════════════════════════ */
-.sig-header {
-  width: calc(100% - 12.5mm);
-  border-collapse: collapse;
-  margin-top: 1mm;
-}
-.sig-header td {
-  border: 0.6pt solid #555;
-  padding: 1.2mm 3mm;
-  font-size: 7pt;
-  font-weight: bold;
-  text-align: center;
-  width: 50%;
-}
-.sig-space {
-  width: calc(100% - 12.5mm);
-  border-collapse: collapse;
-}
-.sig-space td {
-  border-left: 0.6pt solid #555;
-  border-right: 0.6pt solid #555;
-  border-bottom: 0.6pt solid #555;
-  height: 16mm;
-  width: 50%;
-}
-.sig-lines {
-  width: calc(100% - 12.5mm);
-  border-collapse: collapse;
-}
-.sig-lines td {
-  border: 0.6pt solid #555;
-  padding: 0.8mm 2mm;
-  font-size: 6.8pt;
-  width: 50%;
-  vertical-align: top;
-}
-.sig-lines .sig-title {
-  font-weight: bold;
-  text-align: center;
-  font-size: 7pt;
-}
+    .sig-header {
+      width: calc(100% - 12.5mm);
+      border-collapse: collapse;
+      margin-top: 1mm;
+    }
 
-/* ════════════════════════════════════════════════
+    .sig-header td {
+      border: 0.6pt solid #555;
+      padding: 1.2mm 3mm;
+      font-size: 7pt;
+      font-weight: bold;
+      text-align: center;
+      width: 50%;
+    }
+
+    .sig-space {
+      width: calc(100% - 12.5mm);
+      border-collapse: collapse;
+    }
+
+    .sig-space td {
+      border-left: 0.6pt solid #555;
+      border-right: 0.6pt solid #555;
+      border-bottom: 0.6pt solid #555;
+      height: 16mm;
+      width: 50%;
+    }
+
+    .sig-lines {
+      width: calc(100% - 12.5mm);
+      border-collapse: collapse;
+    }
+
+    .sig-lines td {
+      border: 0.6pt solid #555;
+      padding: 0.8mm 2mm;
+      font-size: 6.8pt;
+      width: 50%;
+      vertical-align: top;
+    }
+
+    .sig-lines .sig-title {
+      font-weight: bold;
+      text-align: center;
+      font-size: 7pt;
+    }
+
+    /* ════════════════════════════════════════════════
    FOOTER — script / cursive brand line
 ════════════════════════════════════════════════ */
-.footer-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 3mm;
-}
-.footer {
-  flex: 1;
-  text-align: right;
-  font-size: 10pt;
-  padding-right: 13.5mm;
-  color: #111;
-}
-.footer .script {
-  font-family: 'Yellowtail', 'Segoe Script', 'Brush Script MT', cursive;
-  font-size: 14pt;
-  font-weight: 400;
-}
-</style>
+    .footer-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 3mm;
+    }
+
+    .footer {
+      flex: 1;
+      text-align: right;
+      font-size: 10pt;
+      padding-right: 13.5mm;
+      color: #111;
+    }
+
+    .footer .script {
+      font-family: 'Yellowtail', 'Segoe Script', 'Brush Script MT', cursive;
+      font-size: 14pt;
+      font-weight: 400;
+    }
+  </style>
 </head>
+
 <body>
-<div class="page">
+  <div class="page">
 
-  <!-- ═══ Decorative top-right strip + attached contact icons ═══ -->
-  <div class="deco-strip"></div>
+    <!-- ═══ Decorative top-right strip + attached contact icons ═══ -->
+    <div class="deco-strip"></div>
 
-  <!-- ═══ Decorative left-margin strip (alongside info/items/warranty) ═══ -->
-  <div class="deco-strip-left"></div>
+    <!-- ═══ Decorative left-margin strip (alongside info/items/warranty) ═══ -->
+    <div class="deco-strip-left"></div>
 
-  <div class="icon-circle icon-pin">
-    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
-    </svg>
-  </div>
-  <div class="icon-circle icon-phone">
-    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.7 3.5.8.6 0 1 .5 1 1V20c0 .6-.4 1-1 1C9.4 21 2 13.4 2 4c0-.6.4-1 1-1h3.3c.6 0 1 .4 1 1 .1 1.2.4 2.4.8 3.5.1.4 0 .8-.2 1L6.6 10.8z"/>
-    </svg>
-  </div>
-  <div class="icon-circle icon-email">
-    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm9 7L4.4 6.6 3.4 8 12 14l8.6-6-1-1.4L12 12z"/>
-    </svg>
-  </div>
-
-  <div class="contact-block">
-    <div class="c-row">{{ company.address or "" }}</div>
-    <div class="c-row" style="flex-direction:column; align-items:flex-end; line-height:1.55;">
-      {% for phone in company_phones %}
-      <span>{{ phone }}</span>
-      {% endfor %}
+    <div class="icon-circle icon-pin">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z" />
+      </svg>
     </div>
-    <div class="c-row">creativekurunegala@gmail.com</div>
-  </div>
+    <div class="icon-circle icon-phone">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.7 3.5.8.6 0 1 .5 1 1V20c0 .6-.4 1-1 1C9.4 21 2 13.4 2 4c0-.6.4-1 1-1h3.3c.6 0 1 .4 1 1 .1 1.2.4 2.4.8 3.5.1.4 0 .8-.2 1L6.6 10.8z" />
+      </svg>
+    </div>
+    <div class="icon-circle icon-email">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm9 7L4.4 6.6 3.4 8 12 14l8.6-6-1-1.4L12 12z" />
+      </svg>
+    </div>
 
-  <div class="content">
+    <div class="contact-block">
+      <div class="c-row">{{ company.address or "" }}</div>
+      <div class="c-row" style="flex-direction:column; align-items:flex-end; line-height:1.55;">
+        {% for phone in company_phones %}
+        <span>{{ phone }}</span>
+        {% endfor %}
+      </div>
+      <div class="c-row">creativekurunegala@gmail.com</div>
+    </div>
 
-    <!-- ═══ HEADER: logo only ═══════════════════════════════ -->
-    <div class="header">
-      <div class="logo-area">
-        {% if logo_b64 %}
+    <div class="content">
+
+      <!-- ═══ HEADER: logo only ═══════════════════════════════ -->
+      <div class="header">
+        <div class="logo-area">
+          {% if logo_b64 %}
           <img src="data:image/png;base64,{{ logo_b64 }}" alt="Creative Computers Logo">
-        {% else %}
+          {% else %}
           <div class="logo-text-cc">CREATIVE</div>
           <div class="logo-text-rest">COMPUTERS</div>
-        {% endif %}
+          {% endif %}
+        </div>
       </div>
-    </div>
 
       <!-- ═══ INVOICE TITLE ════════════════════════════════════ -->
       <div class="inv-title-block">
@@ -396,7 +510,7 @@ html, body {
         </tr>
         <tr>
           <td class="lbl">CUSTOMER<br>TIN</td>
-          <td class="val">{{ invoice.customer.tin or "" }}</td>
+          <td class="val">{{ invoice.customer_tin or invoice.customer.tin or "" }}</td>
           <td class="rlbl">DUE DATE</td>
           <td class="rval">
             {% if invoice.due_date %}{{ invoice.due_date.strftime('%Y-%m-%d') }}{% endif %}
@@ -404,7 +518,7 @@ html, body {
         </tr>
         <tr>
           <td class="lbl">CONTACT NO</td>
-          <td class="val">{{ invoice.customer.phone or "" }}</td>
+          <td class="val">{{ invoice.customer_phone or invoice.customer.phone or "" }}</td>
           <td class="rlbl">PO No.</td>
           <td class="rval">{{ invoice.po_number or "" }}</td>
         </tr>
@@ -445,11 +559,16 @@ html, body {
           <!-- Filler rows to keep table structured (min 3 blank rows) -->
           {% set n = invoice.items | length %}
           {% for i in range(5) %}
-            {% if i >= n %}
-            <tr class="filler">
-              <td></td><td></td><td></td><td></td><td></td><td></td>
-            </tr>
-            {% endif %}
+          {% if i >= n %}
+          <tr class="filler">
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+          </tr>
+          {% endif %}
           {% endfor %}
 
           <!-- SSCL + VAT rows — TAX-INVOICE only -->
@@ -535,7 +654,8 @@ html, body {
         <div class="footer">"<span class="script">Care with the Best Service</span>"</div>
       </div>
 
-  </div><!-- /content -->
-</div><!-- /page -->
+    </div><!-- /content -->
+  </div><!-- /page -->
 </body>
+
 </html>
