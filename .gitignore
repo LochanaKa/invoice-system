@@ -1,0 +1,18 @@
+# Environment variables — never commit real credentials
+backend/.env
+
+# Python
+backend/__pycache__/
+backend/routers/__pycache__/
+backend/**/__pycache__/
+*.pyc
+
+# Database backups — contain real customer/financial data
+backend/backups/
+backend/scripts/backups/
+
+# Debug logs
+debug-*.log
+
+# Editor
+.vscode/
