@@ -142,6 +142,7 @@ class JobCard(Base):
 
     id                      = Column(Integer, primary_key=True)
     customer_name           = Column(String(200), nullable=False)
+    customer_phone          = Column(String(30), nullable=True)
     device_name             = Column(String(200), nullable=False)
     issue_description       = Column(Text, nullable=False)
     received_by_staff_id    = Column(Integer, ForeignKey("reps.id"), nullable=False)

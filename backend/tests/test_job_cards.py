@@ -100,3 +100,23 @@ def test_serial_number_can_be_set_optional():
     )
 
     assert payload.serial_number == "SN-12345"
+
+
+def test_customer_phone_can_be_set():
+    payload = JobCardCreate(
+        customer_name="Riley Doe",
+        customer_phone="0771234567",
+        device_name="Laptop",
+        issue_description="Motherboard issue",
+        received_by_staff_id=9,
+        serial_number="SN-12345",
+    )
+
+    assert payload.customer_phone == "0771234567"
+
+
+def test_update_schema_accepts_customer_phone_change():
+    payload = JobCardUpdate(customer_phone="0779876543")
+
+    assert payload.customer_phone == "0779876543"
+

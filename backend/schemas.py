@@ -219,6 +219,7 @@ class InvoiceCreate(BaseModel):
 
 class JobCardCreate(BaseModel):
     customer_name: str = Field(..., min_length=1, max_length=200)
+    customer_phone: Optional[str] = Field(default=None, max_length=30)
     device_name: str = Field(..., min_length=1, max_length=200)
     issue_description: str = Field(..., min_length=1)
     received_by_staff_id: int = Field(..., gt=0)
@@ -241,6 +242,7 @@ class JobCardCreate(BaseModel):
 class JobCardResponse(BaseModel):
     id: int
     customer_name: str
+    customer_phone: Optional[str] = None
     device_name: str
     issue_description: str
     received_by_staff_id: int
@@ -261,6 +263,7 @@ class JobCardResponse(BaseModel):
 
 
 class JobCardUpdate(BaseModel):
+    customer_phone: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
     assigned_to_staff_id: Optional[int] = None

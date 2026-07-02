@@ -95,6 +95,9 @@ export default function JobCardDetail() {
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Customer</div>
               <div className="mt-1 text-base font-semibold text-gray-800">{card.customer_name}</div>
+              {card.customer_phone && (
+                <div className="mt-0.5 text-sm text-gray-500">Phone: {card.customer_phone}</div>
+              )}
             </div>
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Device</div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, CheckCircle2, AlertCircle } from "lucide-react";
-import { createJobCard, getReps } from "../services/api";
+import { ClipboardList, CheckCircle2, AlertCircle, Plus } from "lucide-react";
+import { createJobCard, getReps, getCustomers, createCustomer } from "../services/api";
 
 const intakeOptions = [
   { value: "WALK_IN", label: "Walk-in Drop-off", description: "Customer brought the device directly to the shop." },
@@ -12,6 +12,7 @@ export default function NewJobCard() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     customer_name: "",
+    customer_phone: "",
     device_name: "",
     issue_description: "",
     received_by_staff_id: "",
@@ -23,20 +24,58 @@ export default function NewJobCard() {
     paper_grn_reference: "",
   });
   const [staff, setStaff] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [isOpen, setIsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+
+  // Quick Add customer states
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAddName, setQuickAddName] = useState("");
+  const [quickAddPhone, setQuickAddPhone] = useState("");
+  const [quickAdding, setQuickAdding] = useState(false);
+  const [quickAddErr, setQuickAddErr] = useState(null);
 
   useEffect(() => {
     getReps()
       .then((data) => setStaff((data || []).filter((rep) => rep.is_active !== false)))
       .catch(() => setStaff([]));
+    
+    getCustomers()
+      .then((data) => setCustomers(data || []))
+      .catch(() => setCustomers([]));
   }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
+
+  async function handleQuickAddSave() {
+    if (!quickAddName.trim()) return;
+    setQuickAdding(true);
+    setQuickAddErr(null);
+    try {
+      const newCust = await createCustomer({
+        name: quickAddName.trim(),
+        phone: quickAddPhone.trim() || null,
+      });
+      setCustomers((prev) => [...prev, newCust]);
+      setForm((f) => ({
+        ...f,
+        customer_name: newCust.name,
+        customer_phone: newCust.phone || "",
+      }));
+      setShowQuickAdd(false);
+    } catch (err) {
+      setQuickAddErr(
+        err.response?.data?.detail || "Failed to save customer. Please try again."
+      );
+    } finally {
+      setQuickAdding(false);
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -47,6 +86,7 @@ export default function NewJobCard() {
     try {
       const payload = {
         ...form,
+        customer_phone: form.customer_phone.trim() || null,
         received_by_staff_id: Number(form.received_by_staff_id),
         assigned_to_staff_id: form.assigned_to_staff_id ? Number(form.assigned_to_staff_id) : null,
         priority: form.priority,
@@ -59,6 +99,7 @@ export default function NewJobCard() {
       setSuccess("Job card created successfully.");
       setForm({
         customer_name: "",
+        customer_phone: "",
         device_name: "",
         issue_description: "",
         received_by_staff_id: "",
@@ -76,6 +117,10 @@ export default function NewJobCard() {
       setSubmitting(false);
     }
   };
+
+  const filteredCustomers = customers.filter((c) =>
+    c.name.toLowerCase().includes(form.customer_name.toLowerCase())
+  );
 
   return (
     <div className="max-w-4xl space-y-5">
@@ -111,19 +156,77 @@ export default function NewJobCard() {
         )}
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div>
+          <div className="relative">
             <label className="mb-1 block text-sm font-medium text-gray-700">Customer Name</label>
             <input
               name="customer_name"
               value={form.customer_name}
-              onChange={handleChange}
+              onChange={(e) => {
+                handleChange(e);
+                setIsOpen(true);
+              }}
+              onFocus={() => setIsOpen(true)}
+              onBlur={() => setTimeout(() => setIsOpen(false), 200)}
               required
+              autoComplete="off"
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
               placeholder="Customer or company name"
             />
+            {isOpen && (filteredCustomers.length > 0 || (form.customer_name.trim() && !customers.some(c => c.name.toLowerCase() === form.customer_name.trim().toLowerCase()))) && (
+              <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg z-50">
+                {filteredCustomers.slice(0, 8).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={() => {
+                      setForm((prev) => ({
+                        ...prev,
+                        customer_name: c.name,
+                        customer_phone: c.phone || "",
+                      }));
+                      setIsOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-gray-700 transition-colors flex flex-col border-b border-gray-50 last:border-b-0"
+                  >
+                    <span className="font-medium text-sm">{c.name}</span>
+                    {c.phone && (
+                      <span className="text-xs text-gray-400 mt-0.5">Phone: {c.phone}</span>
+                    )}
+                  </button>
+                ))}
+
+                {form.customer_name.trim() && !customers.some(c => c.name.toLowerCase() === form.customer_name.trim().toLowerCase()) && (
+                  <button
+                    type="button"
+                    onMouseDown={() => {
+                      setQuickAddName(form.customer_name);
+                      setQuickAddPhone(form.customer_phone || "");
+                      setQuickAddErr(null);
+                      setShowQuickAdd(true);
+                      setIsOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold border-t border-blue-100 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Plus size={16} />
+                    Add New Customer: "{form.customer_name}"
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Customer Contact Number</label>
+            <input
+              name="customer_phone"
+              value={form.customer_phone}
+              onChange={handleChange}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+              placeholder="Contact number (auto-fills if customer selected)"
+            />
+          </div>
+
+          <div className="md:col-span-2">
             <label className="mb-1 block text-sm font-medium text-gray-700">Device / Item</label>
             <input
               name="device_name"
@@ -278,6 +381,77 @@ export default function NewJobCard() {
           </button>
         </div>
       </form>
+
+      {/* ── Quick Add Customer Modal ───────────────────────── */}
+      {showQuickAdd && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm z-50">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl p-6 w-full max-w-md animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Quick Add Customer</h3>
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {quickAddErr && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 mb-4">
+                {quickAddErr}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Customer Name *
+                </label>
+                <input
+                  type="text"
+                  value={quickAddName}
+                  onChange={(e) => setQuickAddName(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800"
+                  placeholder="e.g. Samurdhi Bank - Gokarella"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Telephone Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={quickAddPhone}
+                  onChange={(e) => setQuickAddPhone(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800"
+                  placeholder="e.g. +94 37 123 4567"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd(false)}
+                className="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleQuickAddSave}
+                disabled={quickAdding || !quickAddName.trim()}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {quickAdding ? "Saving..." : "Save Customer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

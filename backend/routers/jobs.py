@@ -26,6 +26,7 @@ def get_job_card(job_card_id: int, db: Session = Depends(get_db)):
     return JobCardResponse(
         id=card.id,
         customer_name=card.customer_name,
+        customer_phone=card.customer_phone,
         device_name=card.device_name,
         issue_description=card.issue_description,
         received_by_staff_id=card.received_by_staff_id,
@@ -56,6 +57,7 @@ def create_job_card(payload: JobCardCreate, db: Session = Depends(get_db)):
 
     card = JobCard(
         customer_name=payload.customer_name.strip(),
+        customer_phone=(payload.customer_phone or "").strip() or None,
         device_name=payload.device_name.strip(),
         issue_description=payload.issue_description.strip(),
         received_by_staff_id=payload.received_by_staff_id,
@@ -74,6 +76,7 @@ def create_job_card(payload: JobCardCreate, db: Session = Depends(get_db)):
     return JobCardResponse(
         id=card.id,
         customer_name=card.customer_name,
+        customer_phone=card.customer_phone,
         device_name=card.device_name,
         issue_description=card.issue_description,
         received_by_staff_id=card.received_by_staff_id,
@@ -97,6 +100,8 @@ def update_job_card(job_card_id: int, payload: JobCardUpdate, db: Session = Depe
     if not card:
         raise HTTPException(status_code=404, detail="Job card not found.")
 
+    if "customer_phone" in payload.model_fields_set:
+        card.customer_phone = (payload.customer_phone or "").strip() or None
     if payload.status is not None:
         card.status = payload.status.upper()
     if payload.notes is not None:
@@ -118,6 +123,7 @@ def update_job_card(job_card_id: int, payload: JobCardUpdate, db: Session = Depe
     return JobCardResponse(
         id=card.id,
         customer_name=card.customer_name,
+        customer_phone=card.customer_phone,
         device_name=card.device_name,
         issue_description=card.issue_description,
         received_by_staff_id=card.received_by_staff_id,

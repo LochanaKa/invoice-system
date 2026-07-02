@@ -231,6 +231,9 @@ def run_startup_migrations(engine: Engine) -> None:
             "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS customer_name VARCHAR(200)"
         ))
         conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(30)"
+        ))
+        conn.execute(text(
             "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS device_name VARCHAR(200)"
         ))
         conn.execute(text(
