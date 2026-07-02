@@ -1,0 +1,1126 @@
+diff --git a/backend/auth.py b/backend/auth.py
+new file mode 100644
+index 0000000..0d972e4
+--- /dev/null
++++ b/backend/auth.py
+@@ -0,0 +1,113 @@
++"""
++auth.py — Password hashing, JWT tokens, and route protection
++================================================================
++Three jobs live here:
++
++  1. Turn a plaintext password into a hash (and check a password
++     against a stored hash) — using bcrypt.
++  2. Create and verify JWT ("JSON Web Token") access tokens — the
++     signed, tamper-proof "ID badge" a user gets after logging in.
++  3. A FastAPI dependency (`get_current_user`) that any router can
++     use to require a valid token before running.
++
++Analogy: bcrypt is the lock on the front door (turns a password into
++something unreadable, even if the database itself leaks). A JWT is a
++wristband from a concert — once issued, the doorman (get_current_user)
++just checks the wristband is real and not expired; they don't need to
++re-check your ID every time you walk through a different door.
++"""
++
++import os
++from datetime import datetime, timedelta, timezone
++from typing import Optional
++
++import bcrypt
++import jwt
++from fastapi import Depends, HTTPException, status
++from fastapi.security import OAuth2PasswordBearer
++from sqlalchemy.orm import Session
++
++from database import get_db
++from models import User
++
++# ── Config ────────────────────────────────────────────────────
++# SECRET_KEY signs every token. If this leaks, anyone can forge a
++# valid login — treat it like a password. Store it in .env, never
++# commit it, and use a long random string in production.
++SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-insecure-key-change-me")
++ALGORITHM = "HS256"
++ACCESS_TOKEN_EXPIRE_HOURS = 8  # matches the 8-hour session requirement
++
++# Tells FastAPI's auto-generated /docs page where to send login requests,
++# and reads the "Authorization: Bearer <token>" header automatically.
++oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
++
++
++# ── Password hashing ─────────────────────────────────────────────
++
++def hash_password(plain_password: str) -> str:
++    """
++    Turn a plaintext password into a bcrypt hash for storage.
++    bcrypt automatically salts each hash, so two identical passwords
++    produce two different hashes — this defeats rainbow-table attacks.
++    """
++    hashed = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt())
++    return hashed.decode("utf-8")
++
++
++def verify_password(plain_password: str, hashed_password: str) -> bool:
++    """Check a login attempt's password against the stored hash."""
++    return bcrypt.checkpw(
++        plain_password.encode("utf-8"), hashed_password.encode("utf-8")
++    )
++
++
++# ── JWT tokens ────────────────────────────────────────────────────
++
++def create_access_token(data: dict) -> str:
++    """
++    Build a signed JWT containing `data` (we'll put the username in it)
++    plus an expiry timestamp. FastAPI/jwt handles the signing — nobody
++    can edit the payload without invalidating the signature.
++    """
++    to_encode = data.copy()
++    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
++    to_encode.update({"exp": expire})
++    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
++
++
++def decode_access_token(token: str) -> dict:
++    """Verify a token's signature and expiry, and return its payload."""
++    try:
++        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
++    except jwt.ExpiredSignatureError:
++        raise HTTPException(
++            status_code=status.HTTP_401_UNAUTHORIZED,
++            detail="Session expired. Please log in again.",
++        )
++    except jwt.InvalidTokenError:
++        raise HTTPException(
++            status_code=status.HTTP_401_UNAUTHORIZED,
++            detail="Invalid authentication token.",
++        )
++
++
++# ── FastAPI dependency: require a logged-in user ─────────────────
++# Any route that adds `current_user: User = Depends(get_current_user)`
++# to its parameters will now 401 automatically if there's no valid
++# token — FastAPI runs this function before the route body executes.
++
++def get_current_user(
++    token: str = Depends(oauth2_scheme),
++    db: Session = Depends(get_db),
++) -> User:
++    payload = decode_access_token(token)
++    username: Optional[str] = payload.get("sub")
++    if username is None:
++        raise HTTPException(status_code=401, detail="Invalid authentication token.")
++
++    user = db.query(User).filter(User.username == username).first()
++    if user is None or not user.is_active:
++        raise HTTPException(status_code=401, detail="User not found or inactive.")
++
++    return user
+diff --git a/backend/create_first_users.py b/backend/create_first_users.py
+new file mode 100644
+index 0000000..498ec90
+--- /dev/null
++++ b/backend/create_first_users.py
+@@ -0,0 +1,85 @@
++"""
++create_first_users.py — One-time script to create login accounts
++====================================================================
++Run this ONCE after the `users` table exists (it's created automatically
++the next time you start the FastAPI server, via Base.metadata.create_all).
++
++What it does:
++  - Looks at every row already in `reps`
++  - Creates a matching login (username = first name, lowercase)
++  - Prints each temporary password ONCE to the console — write these
++    down and give them to staff, then have everyone change their
++    password on first login (a "change password" endpoint is a good
++    next feature to add).
++  - Marks CEO/General Manager as admin (can manage Settings/Staff/
++    Backups); everyone else is a normal rep login.
++  - Skips any rep who already has a login (safe to re-run).
++
++Usage (from the backend/ directory, with your venv active):
++    python create_first_users.py
++"""
++
++import secrets
++import string
++
++from database import SessionLocal
++from models import Rep, User
++from auth import hash_password
++
++ADMIN_ROLES = {"ceo", "general manager"}
++
++
++def generate_temp_password(length: int = 10) -> str:
++    """A random, readable temporary password — not the final one staff will use."""
++    alphabet = string.ascii_letters + string.digits
++    return "".join(secrets.choice(alphabet) for _ in range(length))
++
++
++def main():
++    db = SessionLocal()
++    try:
++        reps = db.query(Rep).filter(Rep.is_active == True).order_by(Rep.code).all()
++        if not reps:
++            print("No reps found — nothing to do. Add reps first, then re-run this.")
++            return
++
++        print(f"Found {len(reps)} active rep(s). Creating logins...\n")
++        print(f"{'Username':<15} {'Temp Password':<14} {'Admin?':<8} Linked Rep")
++        print("-" * 65)
++
++        created = 0
++        for rep in reps:
++            username = rep.name.strip().lower().split()[0]  # "Asanka" -> "asanka"
++
++            existing = db.query(User).filter(User.username == username).first()
++            if existing:
++                print(f"{username:<15} {'(exists)':<14} {'—':<8} {rep.name} — skipped")
++                continue
++
++            temp_password = generate_temp_password()
++            is_admin = (rep.role or "").strip().lower() in ADMIN_ROLES
++
++            user = User(
++                username=username,
++                password_hash=hash_password(temp_password),
++                rep_id=rep.id,
++                is_admin=is_admin,
++                is_active=True,
++            )
++            db.add(user)
++            db.commit()
++
++            print(f"{username:<15} {temp_password:<14} {'Yes' if is_admin else 'No':<8} {rep.name}")
++            created += 1
++
++        print("-" * 65)
++        print(f"\nCreated {created} new login(s). Write down these passwords now —")
++        print("they will NOT be shown again. Give each person their username")
++        print("and temporary password, and have them log in at /login.")
++
++    finally:
++        db.close()
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/backend/main.py b/backend/main.py
+index e80df59..d1c1d52 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -14,16 +14,17 @@ Then open: http://localhost:8000/docs
+ (FastAPI auto-generates interactive API documentation — try it!)
+ """
+ 
+-from fastapi import FastAPI
++from fastapi import FastAPI, Depends
+ from fastapi.middleware.cors import CORSMiddleware
+ from fastapi.staticfiles import StaticFiles
+ from fastapi.responses import FileResponse
+ from pathlib import Path
+ 
+-from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes,  backup_router,  preferences
++from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes,  backup_router,  preferences, auth_router
+ from database import engine
+ from models import Base
+ from migrations import run_startup_migrations
++from auth import get_current_user
+ 
+ # ── Auto-create any missing tables on startup ─────────────────────────────────
+ # This is non-destructive: existing tables and their data are never touched.
+@@ -55,17 +56,26 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
+ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+ 
+ # ── Routers ───────────────────────────────────────────────────
+-app.include_router(invoices.router,   prefix="/api")
+-app.include_router(customers.router,  prefix="/api")
+-app.include_router(dashboard.router,  prefix="/api")
+-app.include_router(pdf_router.router, prefix="/api")   # ← PDF
+-app.include_router(settings.router,   prefix="/api")   # ← Settings
+-app.include_router(vat_report.router, prefix="/api") #  ← VAT report
+-app.include_router(all_inc_report.router, prefix="/api") #  ← All-Inclusive report
+-app.include_router(reps.router,       prefix="/api") #  ← Staff management
+-app.include_router(routes.router,     prefix="/api") #  ← Routes CRUD
+-app.include_router(preferences.router, prefix="/api") #  ← Dashboard layout preferences
+-app.include_router(backup_router.router, prefix="/api") #  ← Backup management
++# auth_router is deliberately NOT protected — you can't require a login
++# token to reach the endpoint that hands out login tokens.
++app.include_router(auth_router.router, prefix="/api")
++
++# Every other router requires a valid JWT. Adding `dependencies=[...]`
++# here runs get_current_user before ANY route in that router — one line
++# protects the whole file instead of editing every endpoint individually.
++protected = {"dependencies": [Depends(get_current_user)]}
++
++app.include_router(invoices.router,   prefix="/api", **protected)
++app.include_router(customers.router,  prefix="/api", **protected)
++app.include_router(dashboard.router,  prefix="/api", **protected)
++app.include_router(pdf_router.router, prefix="/api", **protected)   # ← PDF
++app.include_router(settings.router,   prefix="/api", **protected)   # ← Settings
++app.include_router(vat_report.router, prefix="/api", **protected) #  ← VAT report
++app.include_router(all_inc_report.router, prefix="/api", **protected) #  ← All-Inclusive report
++app.include_router(reps.router,       prefix="/api", **protected) #  ← Staff management
++app.include_router(routes.router,     prefix="/api", **protected) #  ← Routes CRUD
++app.include_router(preferences.router, prefix="/api", **protected) #  ← Dashboard layout preferences
++app.include_router(backup_router.router, prefix="/api", **protected) #  ← Backup management
+ 
+ @app.get("/", tags=["Health"])
+ def root():
+diff --git a/backend/models.py b/backend/models.py
+index b16d071..d15286a 100644
+--- a/backend/models.py
++++ b/backend/models.py
+@@ -85,6 +85,30 @@ class UserPreference(Base):
+     updated_at       = Column(DateTime, server_default=func.now(), onupdate=func.now())
+ 
+ 
++class User(Base):
++    """
++    A login account. Optionally linked to a Rep (rep_id) so that when
++    'Asanka' logs in, invoices they create can be attributed to the
++    Asanka rep record automatically — no separate "who created this"
++    field needed elsewhere.
++
++    is_admin distinguishes staff who can manage Settings/Staff/Backups
++    from ordinary reps who should only see invoices/customers/dashboard.
++    """
++    __tablename__ = "users"
++
++    id            = Column(Integer, primary_key=True)
++    username      = Column(String(50), nullable=False, unique=True)
++    password_hash = Column(String(100), nullable=False)
++    rep_id        = Column(Integer, ForeignKey("reps.id"), nullable=True)
++    is_admin      = Column(Boolean, default=False)
++    is_active     = Column(Boolean, default=True)
++    created_at    = Column(DateTime, server_default=func.now())
++    last_login    = Column(DateTime, nullable=True)
++
++    rep = relationship("Rep")
++
++
+ class Route(Base):
+     __tablename__ = "routes"
+ 
+diff --git a/backend/routers/auth_router.py b/backend/routers/auth_router.py
+new file mode 100644
+index 0000000..01ab2be
+--- /dev/null
++++ b/backend/routers/auth_router.py
+@@ -0,0 +1,125 @@
++"""
++routers/auth_router.py — Login endpoint
++==========================================
++  POST /api/auth/login  → check username+password, return a JWT
++  GET  /api/auth/me      → who am I? (used by the frontend on page load
++                            to check "is my saved token still valid?")
++"""
++
++from datetime import datetime, timezone
++
++from fastapi import APIRouter, Depends, HTTPException
++from fastapi.security import OAuth2PasswordRequestForm
++from sqlalchemy.orm import Session, joinedload
++
++from database import get_db
++from models import User
++from auth import verify_password, hash_password, create_access_token, get_current_user
++from schemas import TokenResponse, UserOut, UserCreate
++
++router = APIRouter(prefix="/auth", tags=["Auth"])
++
++
++@router.post("/login", response_model=TokenResponse)
++def login(
++    form_data: OAuth2PasswordRequestForm = Depends(),
++    db: Session = Depends(get_db),
++):
++    """
++    OAuth2PasswordRequestForm expects form-encoded 'username' and
++    'password' fields (not JSON) — this is a FastAPI/OAuth2 convention
++    that also makes the interactive /docs page work out of the box.
++    The frontend will send these as form data too (see api.js).
++    """
++    user = (
++        db.query(User)
++        .options(joinedload(User.rep))
++        .filter(User.username == form_data.username)
++        .first()
++    )
++
++    # Deliberately vague error message — "wrong username" vs "wrong
++    # password" tells an attacker which usernames exist. Always say
++    # the same thing for both cases.
++    if not user or not user.is_active or not verify_password(form_data.password, user.password_hash):
++        raise HTTPException(status_code=401, detail="Incorrect username or password.")
++
++    user.last_login = datetime.now(timezone.utc)
++    db.commit()
++
++    token = create_access_token({"sub": user.username})
++
++    return TokenResponse(
++        access_token=token,
++        token_type="bearer",
++        user=UserOut(
++            id=user.id,
++            username=user.username,
++            is_admin=user.is_admin,
++            rep_id=user.rep_id,
++            rep_name=user.rep.name if user.rep else None,
++        ),
++    )
++
++
++@router.get("/me", response_model=UserOut)
++def get_me(current_user: User = Depends(get_current_user)):
++    """Used by the frontend on app load to validate a saved token."""
++    return UserOut(
++        id=current_user.id,
++        username=current_user.username,
++        is_admin=current_user.is_admin,
++        rep_id=current_user.rep_id,
++        rep_name=current_user.rep.name if current_user.rep else None,
++    )
++
++
++def _require_admin(current_user: User) -> None:
++    if not current_user.is_admin:
++        raise HTTPException(status_code=403, detail="Admin access required.")
++
++
++@router.get("/users", response_model=list[UserOut])
++def list_users(
++    current_user: User = Depends(get_current_user),
++    db: Session = Depends(get_db),
++):
++    """Admin-only: list all login accounts (for a Staff Management screen)."""
++    _require_admin(current_user)
++    users = db.query(User).options(joinedload(User.rep)).order_by(User.username).all()
++    return [
++        UserOut(
++            id=u.id, username=u.username, is_admin=u.is_admin,
++            rep_id=u.rep_id, rep_name=u.rep.name if u.rep else None,
++        )
++        for u in users
++    ]
++
++
++@router.post("/users", response_model=UserOut, status_code=201)
++def create_user(
++    payload: UserCreate,
++    current_user: User = Depends(get_current_user),
++    db: Session = Depends(get_db),
++):
++    """Admin-only: create a new login for a staff member."""
++    _require_admin(current_user)
++
++    existing = db.query(User).filter(User.username == payload.username).first()
++    if existing:
++        raise HTTPException(status_code=409, detail=f"Username '{payload.username}' already taken.")
++
++    user = User(
++        username=payload.username,
++        password_hash=hash_password(payload.password),
++        rep_id=payload.rep_id,
++        is_admin=payload.is_admin,
++    )
++    db.add(user)
++    db.commit()
++    db.refresh(user)
++
++    return UserOut(
++        id=user.id, username=user.username, is_admin=user.is_admin,
++        rep_id=user.rep_id, rep_name=user.rep.name if user.rep else None,
++    )
+diff --git a/backend/schemas.py b/backend/schemas.py
+index 62993fc..00e79c1 100644
+--- a/backend/schemas.py
++++ b/backend/schemas.py
+@@ -21,6 +21,29 @@ from datetime import date, datetime
+ from decimal import Decimal
+ 
+ 
++# ── Auth ──────────────────────────────────────────────────────────────────────
++
++class UserOut(BaseModel):
++    id:        int
++    username:  str
++    is_admin:  bool
++    rep_id:    Optional[int] = None
++    rep_name:  Optional[str] = None
++
++
++class TokenResponse(BaseModel):
++    access_token: str
++    token_type:   str
++    user:         UserOut
++
++
++class UserCreate(BaseModel):
++    username: str = Field(..., min_length=3, max_length=50)
++    password: str = Field(..., min_length=6)
++    rep_id:   Optional[int] = None
++    is_admin: bool = False
++
++
+ # ── Settings ──────────────────────────────────────────────────────────────────
+ 
+ class SettingsOut(BaseModel):
+diff --git a/frontend/src/App.jsx b/frontend/src/App.jsx
+index 36b73e3..f3a999b 100644
+--- a/frontend/src/App.jsx
++++ b/frontend/src/App.jsx
+@@ -10,6 +10,8 @@
+ 
+ import { Routes, Route, Navigate } from "react-router-dom";
+ import Layout        from "./components/Layout";
++import ProtectedRoute from "./components/ProtectedRoute";
++import Login          from "./pages/Login";
+ import Dashboard     from "./pages/Dashboard";
+ import InvoiceList   from "./pages/InvoiceList";
+ import NewInvoice    from "./pages/NewInvoice";
+@@ -27,22 +29,29 @@ import BackupManager  from "./pages/BackupManager";
+ export default function App() {
+   return (
+     <Routes>
+-      <Route path="/" element={<Layout />}>
+-        {/* Default route → redirect to dashboard */}
+-        <Route index element={<Navigate to="/dashboard" replace />} />
+-        <Route path="dashboard"    element={<Dashboard />} />
+-        <Route path="invoices"     element={<InvoiceList />} />
+-        <Route path="invoices/new" element={<NewInvoice />} />
+-        <Route path="invoices/:id" element={<InvoiceDetail />} />
+-        <Route path="customers"    element={<Customers />} />
+-        <Route path="customers/:id" element={<CustomerDetail />} />
+-        <Route path="staff"              element={<StaffManagement />} />
+-        <Route path="staff/:repId/portfolio" element={<RepPortfolio />} />
+-        <Route path="credit"       element={<CreditAging />} />
+-        <Route path="settings"     element={<Settings />} />
+-        <Route path="vat-report"   element={<VATReport />} />
+-        <Route path="all-inclusive-report" element={<AllInclusiveReport />} />
+-        <Route path="backup"       element={<BackupManager />} />
++      {/* Public — no login required */}
++      <Route path="/login" element={<Login />} />
++
++      {/* Everything below requires a valid session. ProtectedRoute
++          checks auth, then Layout renders the sidebar/header, then
++          the actual page renders inside it via <Outlet />. */}
++      <Route element={<ProtectedRoute />}>
++        <Route path="/" element={<Layout />}>
++          <Route index element={<Navigate to="/dashboard" replace />} />
++          <Route path="dashboard"    element={<Dashboard />} />
++          <Route path="invoices"     element={<InvoiceList />} />
++          <Route path="invoices/new" element={<NewInvoice />} />
++          <Route path="invoices/:id" element={<InvoiceDetail />} />
++          <Route path="customers"    element={<Customers />} />
++          <Route path="customers/:id" element={<CustomerDetail />} />
++          <Route path="staff"              element={<StaffManagement />} />
++          <Route path="staff/:repId/portfolio" element={<RepPortfolio />} />
++          <Route path="credit"       element={<CreditAging />} />
++          <Route path="settings"     element={<Settings />} />
++          <Route path="vat-report"   element={<VATReport />} />
++          <Route path="all-inclusive-report" element={<AllInclusiveReport />} />
++          <Route path="backup"       element={<BackupManager />} />
++        </Route>
+       </Route>
+     </Routes>
+   );
+diff --git a/frontend/src/components/Layout.jsx b/frontend/src/components/Layout.jsx
+index 27c3846..f21c915 100644
+--- a/frontend/src/components/Layout.jsx
++++ b/frontend/src/components/Layout.jsx
+@@ -7,11 +7,12 @@
+  *   • Logo:    SVG C-mark mirroring the real logo
+  */
+ 
+-import { NavLink, Outlet } from "react-router-dom";
++import { NavLink, Outlet, useNavigate } from "react-router-dom";
+ import {
+   LayoutDashboard, FileText, PlusCircle,
+-  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive
++  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive, LogOut
+ } from "lucide-react";
++import { useAuth } from "../context/AuthContext";
+ 
+ const navItems = [
+   { to: "/dashboard",    icon: LayoutDashboard, label: "Dashboard"        },
+@@ -53,6 +54,14 @@ function getGreeting() {
+ }
+ 
+ export default function Layout() {
++  const { user, logout } = useAuth();
++  const navigate = useNavigate();
++
++  function handleLogout() {
++    logout();
++    navigate("/login", { replace: true });
++  }
++
+   return (
+     <div className="flex h-screen font-sans" style={{ background: "#f0f4ff" }}>
+ 
+@@ -193,7 +202,7 @@ export default function Layout() {
+             </span>
+           </div>
+ 
+-          {/* Right: attractive greeting badge */}
++          {/* Right: current user + logout */}
+           <div className="flex items-center gap-2.5">
+             <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border shadow-sm text-sm font-semibold"
+                   style={{
+@@ -203,7 +212,7 @@ export default function Layout() {
+                     boxShadow: "0 4px 12px rgba(31, 60, 138, 0.08)",
+                   }}>
+               <span className="text-base leading-none">☀️</span>
+-              <span>{getGreeting()}</span>
++              <span>{getGreeting()}{user?.rep_name ? `, ${user.rep_name}` : ""}</span>
+             </span>
+             {/* Small animated green dot — "live" indicator */}
+             <span className="relative flex h-2.5 w-2.5">
+@@ -212,6 +221,17 @@ export default function Layout() {
+               <span className="relative inline-flex rounded-full h-2.5 w-2.5"
+                     style={{ background: "#27AE60" }} />
+             </span>
++            <button
++              onClick={handleLogout}
++              title="Log out"
++              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm
++                         font-medium text-gray-500 hover:text-red-600 hover:border-red-200
++                         hover:bg-red-50 transition-colors"
++              style={{ borderColor: "#d5dcf5" }}
++            >
++              <LogOut size={14} />
++              Log Out
++            </button>
+           </div>
+         </header>
+ 
+diff --git a/frontend/src/components/ProtectedRoute.jsx b/frontend/src/components/ProtectedRoute.jsx
+new file mode 100644
+index 0000000..c08ef9a
+--- /dev/null
++++ b/frontend/src/components/ProtectedRoute.jsx
+@@ -0,0 +1,37 @@
++/**
++ * components/ProtectedRoute.jsx — Route guard
++ * ==============================================
++ * Wraps <Layout /> in App.jsx. Before rendering the actual page,
++ * it checks: is anyone logged in?
++ *
++ *   - Still checking a saved token (page just loaded) → show a
++ *     spinner, don't flash the login page then immediately swap it.
++ *   - No user → redirect to /login, remembering where they were
++ *     headed so Login.jsx can send them back after signing in.
++ *   - Logged in → render the page as normal (<Outlet />).
++ */
++
++import { Navigate, Outlet, useLocation } from "react-router-dom";
++import { RefreshCw } from "lucide-react";
++import { useAuth } from "../context/AuthContext";
++
++export default function ProtectedRoute() {
++  const { user, loading } = useAuth();
++  const location = useLocation();
++
++  if (loading) {
++    return (
++      <div className="min-h-screen flex items-center justify-center gap-2"
++           style={{ color: "#1F3C8A" }}>
++        <RefreshCw className="animate-spin" size={18} />
++        <span className="text-sm font-medium">Checking session…</span>
++      </div>
++    );
++  }
++
++  if (!user) {
++    return <Navigate to="/login" state={{ from: location }} replace />;
++  }
++
++  return <Outlet />;
++}
+diff --git a/frontend/src/context/AuthContext.jsx b/frontend/src/context/AuthContext.jsx
+new file mode 100644
+index 0000000..c22c481
+--- /dev/null
++++ b/frontend/src/context/AuthContext.jsx
+@@ -0,0 +1,70 @@
++/**
++ * context/AuthContext.jsx — App-wide login state
++ * ==================================================
++ * React Context is a way to share a value (here: "who's logged in")
++ * with every component in the tree, without passing it down through
++ * props one layer at a time.
++ *
++ * Analogy: without Context, every component between App and, say,
++ * the Layout's logout button would need to accept a `user` prop and
++ * pass it further down — like a bucket brigade. Context lets any
++ * component "tap into" the value directly, however deep it is.
++ *
++ * We store the JWT in localStorage so a page refresh doesn't log the
++ * user out — the token survives, and on app load we ask the backend
++ * "is this token still good?" via getMe().
++ */
++
++import { createContext, useContext, useEffect, useState } from "react";
++import { login as apiLogin, getMe } from "../services/api";
++
++const AuthContext = createContext(null);
++
++export function AuthProvider({ children }) {
++  const [user, setUser]       = useState(null);
++  const [loading, setLoading] = useState(true); // true while we check a saved token
++
++  useEffect(() => {
++    const token = localStorage.getItem("cc_token");
++    if (!token) {
++      setLoading(false);
++      return;
++    }
++    // We have a saved token from a previous session — verify it's
++    // still valid (not expired, user still active) before trusting it.
++    getMe()
++      .then((me) => setUser(me))
++      .catch(() => {
++        localStorage.removeItem("cc_token");
++        localStorage.removeItem("cc_user");
++      })
++      .finally(() => setLoading(false));
++  }, []);
++
++  async function login(username, password) {
++    const data = await apiLogin(username, password);
++    localStorage.setItem("cc_token", data.access_token);
++    localStorage.setItem("cc_user", JSON.stringify(data.user));
++    setUser(data.user);
++    return data.user;
++  }
++
++  function logout() {
++    localStorage.removeItem("cc_token");
++    localStorage.removeItem("cc_user");
++    setUser(null);
++  }
++
++  return (
++    <AuthContext.Provider value={{ user, loading, login, logout }}>
++      {children}
++    </AuthContext.Provider>
++  );
++}
++
++/** Usage in any component: const { user, logout } = useAuth(); */
++export function useAuth() {
++  const ctx = useContext(AuthContext);
++  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
++  return ctx;
++}
+diff --git a/frontend/src/main.jsx b/frontend/src/main.jsx
+index 83d1170..181e454 100644
+--- a/frontend/src/main.jsx
++++ b/frontend/src/main.jsx
+@@ -3,11 +3,14 @@ import { createRoot } from "react-dom/client";
+ import { BrowserRouter } from "react-router-dom";
+ import "./index.css";
+ import App from "./App";
++import { AuthProvider } from "./context/AuthContext";
+ 
+ createRoot(document.getElementById("root")).render(
+   <StrictMode>
+     <BrowserRouter>
+-      <App />
++      <AuthProvider>
++        <App />
++      </AuthProvider>
+     </BrowserRouter>
+   </StrictMode>
+ );
+diff --git a/frontend/src/pages/AllInclusiveReport.jsx b/frontend/src/pages/AllInclusiveReport.jsx
+index 3a80e2d..0731a3f 100644
+--- a/frontend/src/pages/AllInclusiveReport.jsx
++++ b/frontend/src/pages/AllInclusiveReport.jsx
+@@ -1,7 +1,9 @@
+ import { useState, useEffect } from "react";
+ import { RefreshCw, Download, FileText } from "lucide-react";
++import { API_BASE } from "../config";
++import { authFetch } from "../services/api";
+ 
+-const API = "http://localhost:8000/api";
++const API = API_BASE;
+ 
+ const fmtLKR = (n) =>
+   `Rs. ${Number(n || 0).toLocaleString("en-LK", { minimumFractionDigits: 2 })}`;
+@@ -30,7 +32,7 @@ export default function AllInclusiveReport() {
+   async function fetchReport() {
+     setLoading(true); setError(null);
+     try {
+-      const res = await fetch(`${API}/all-inclusive-report/summary?year=${year}&month=${month}`);
++      const res = await authFetch(`${API}/all-inclusive-report/summary?year=${year}&month=${month}`);
+       if (!res.ok) throw new Error("Failed");
+       setReport(await res.json());
+     } catch {
+@@ -41,7 +43,7 @@ export default function AllInclusiveReport() {
+   async function handleDownloadPDF() {
+     setDlLoad(true);
+     try {
+-      const res = await fetch(`${API}/all-inclusive-report/pdf?year=${year}&month=${month}`);
++      const res = await authFetch(`${API}/all-inclusive-report/pdf?year=${year}&month=${month}`);
+       if (!res.ok) { showToast("PDF generation failed.", "error"); return; }
+       const blob = await res.blob();
+       const url  = URL.createObjectURL(blob);
+diff --git a/frontend/src/pages/BackupManager.jsx b/frontend/src/pages/BackupManager.jsx
+index 9d928d3..17b75e4 100644
+--- a/frontend/src/pages/BackupManager.jsx
++++ b/frontend/src/pages/BackupManager.jsx
+@@ -12,6 +12,7 @@ import {
+ } from "lucide-react";
+ 
+ import { API_BASE } from "../config";
++import { authFetch } from "../services/api";
+ const API = API_BASE;
+ 
+ const fmtDate = (iso) => iso
+@@ -35,8 +36,8 @@ export default function BackupManager() {
+     setLoading(true);
+     try {
+       const [s, b] = await Promise.all([
+-        fetch(`${API}/backup/status`).then(r => r.json()),
+-        fetch(`${API}/backup/list`).then(r => r.json()),
++        authFetch(`${API}/backup/status`).then(r => r.json()),
++        authFetch(`${API}/backup/list`).then(r => r.json()),
+       ]);
+       setStatus(s);
+       setBackups(b.backups || []);
+@@ -48,7 +49,7 @@ export default function BackupManager() {
+   async function handleRunNow() {
+     setRunning(true);
+     try {
+-      const res = await fetch(`${API}/backup/run`, { method: "POST" });
++      const res = await authFetch(`${API}/backup/run`, { method: "POST" });
+       const data = await res.json();
+       showToast("Backup started! Refreshing in 12 seconds…", "success");
+       setTimeout(() => { loadAll(); setRunning(false); }, 12000);
+diff --git a/frontend/src/pages/InvoiceList.jsx b/frontend/src/pages/InvoiceList.jsx
+index 84ea8ed..d2e028d 100644
+--- a/frontend/src/pages/InvoiceList.jsx
++++ b/frontend/src/pages/InvoiceList.jsx
+@@ -5,9 +5,10 @@
+ import { useState, useEffect } from "react";
+ import { useNavigate } from "react-router-dom";
+ import { Search, RefreshCw, ChevronRight, Trash2, AlertTriangle, Download } from "lucide-react";
+-import { getInvoices, deleteInvoice } from "../services/api";
++import { getInvoices, deleteInvoice, authFetch } from "../services/api";
++import { API_BASE } from "../config";
+ 
+-const API = "http://localhost:8000/api";
++const API = API_BASE;
+ 
+ const formatLKR = (n) =>
+   `Rs. ${Number(n).toLocaleString("en-LK", { minimumFractionDigits: 2 })}`;
+@@ -20,7 +21,7 @@ const formatDate = (d) =>
+ // ── PDF download helper ───────────────────────────────────────
+ async function downloadPDF(invoiceId, invoiceNumber) {
+   try {
+-    const res = await fetch(`${API}/invoices/${invoiceId}/pdf`);
++    const res = await authFetch(`${API}/invoices/${invoiceId}/pdf`);
+     if (!res.ok) {
+       const err = await res.json().catch(() => ({}));
+       alert(`PDF error: ${err.detail || "Unknown error"}`);
+diff --git a/frontend/src/pages/Login.jsx b/frontend/src/pages/Login.jsx
+new file mode 100644
+index 0000000..618a720
+--- /dev/null
++++ b/frontend/src/pages/Login.jsx
+@@ -0,0 +1,131 @@
++import { useState } from "react";
++import { useNavigate, useLocation } from "react-router-dom";
++import { LogIn, AlertCircle, RefreshCw } from "lucide-react";
++import { useAuth } from "../context/AuthContext";
++
++export default function Login() {
++  const { login } = useAuth();
++  const navigate   = useNavigate();
++  const location   = useLocation();
++
++  const [username, setUsername] = useState("");
++  const [password, setPassword] = useState("");
++  const [error,    setError]    = useState(null);
++  const [loading,  setLoading]  = useState(false);
++
++  // If the user was redirected here from a protected page (e.g. typed
++  // /invoices directly while logged out), send them back there after
++  // a successful login instead of always landing on the dashboard.
++  const from = location.state?.from?.pathname || "/dashboard";
++
++  async function handleSubmit(e) {
++    e.preventDefault();
++    setError(null);
++    setLoading(true);
++    try {
++      await login(username.trim(), password);
++      navigate(from, { replace: true });
++    } catch (err) {
++      setError(err.response?.data?.detail || "Login failed. Check your connection.");
++    } finally {
++      setLoading(false);
++    }
++  }
++
++  return (
++    <div className="min-h-screen flex items-center justify-center px-4"
++         style={{ background: "linear-gradient(180deg, #0d1638 0%, #1F3C8A 100%)" }}>
++      <div className="w-full max-w-sm">
++
++        {/* Logo / brand */}
++        <div className="flex flex-col items-center mb-8">
++          <div className="relative w-14 h-14 rounded-2xl overflow-hidden shadow-lg mb-4"
++               style={{ background: "#27AE60" }}>
++            <div className="absolute inset-0 flex items-center justify-center">
++              <span className="text-white font-black text-2xl leading-none"
++                    style={{ fontFamily: "Georgia, serif" }}>C</span>
++            </div>
++            <div className="absolute inset-0"
++                 style={{
++                   background: "linear-gradient(135deg, #1F3C8A 50%, transparent 50%)",
++                   opacity: 0.85,
++                 }} />
++          </div>
++          <div className="text-white font-bold text-lg leading-tight tracking-wide text-center">
++            CREATIVE COMPUTERS
++          </div>
++          <div className="text-blue-300 text-xs mt-0.5 font-medium tracking-wider">
++            INVOICE SYSTEM
++          </div>
++        </div>
++
++        {/* Login card */}
++        <form onSubmit={handleSubmit}
++              className="bg-white rounded-2xl shadow-2xl p-7 space-y-4">
++          <div>
++            <h1 className="text-lg font-bold text-gray-900">Sign in</h1>
++            <p className="text-sm text-gray-500 mt-0.5">
++              Enter your staff username and password.
++            </p>
++          </div>
++
++          {error && (
++            <div className="flex items-start gap-2 bg-red-50 border border-red-200
++                            text-red-700 rounded-xl px-3 py-2.5 text-sm">
++              <AlertCircle size={15} className="mt-0.5 flex-shrink-0" />
++              {error}
++            </div>
++          )}
++
++          <div>
++            <label className="block text-xs font-bold uppercase tracking-wider mb-1.5"
++                   style={{ color: "#1F3C8A" }}>
++              Username
++            </label>
++            <input
++              type="text"
++              autoFocus
++              required
++              value={username}
++              onChange={(e) => setUsername(e.target.value)}
++              placeholder="e.g. asanka"
++              className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl
++                         focus:outline-none focus:ring-2 focus:ring-cc-blue-400 transition"
++            />
++          </div>
++
++          <div>
++            <label className="block text-xs font-bold uppercase tracking-wider mb-1.5"
++                   style={{ color: "#1F3C8A" }}>
++              Password
++            </label>
++            <input
++              type="password"
++              required
++              value={password}
++              onChange={(e) => setPassword(e.target.value)}
++              placeholder="••••••••"
++              className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl
++                         focus:outline-none focus:ring-2 focus:ring-cc-blue-400 transition"
++            />
++          </div>
++
++          <button
++            type="submit"
++            disabled={loading}
++            className="w-full flex items-center justify-center gap-2 text-white text-sm
++                       font-bold py-2.5 rounded-xl transition-colors disabled:opacity-60"
++            style={{ background: "#1F3C8A" }}
++          >
++            {loading ? <RefreshCw size={15} className="animate-spin" /> : <LogIn size={15} />}
++            {loading ? "Signing in…" : "Sign In"}
++          </button>
++        </form>
++
++        <p className="text-center text-blue-300 text-xs mt-6">
++          Kurunegala, Sri Lanka · Invoice Management System
++        </p>
++      </div>
++    </div>
++  );
++}
+diff --git a/frontend/src/pages/NewInvoice.jsx b/frontend/src/pages/NewInvoice.jsx
+index f0eb610..25a996c 100644
+--- a/frontend/src/pages/NewInvoice.jsx
++++ b/frontend/src/pages/NewInvoice.jsx
+@@ -11,7 +11,8 @@
+ import { useState, useEffect } from "react";
+ import { useNavigate }         from "react-router-dom";
+ import { Plus, Trash2, Info }  from "lucide-react";
+-import { getLookups, getCustomers, createInvoice, getSettings, getNextInvoiceNumber, createCustomer, createRoute } from "../services/api";
++import { getLookups, getCustomers, createInvoice, getSettings, getNextInvoiceNumber, createCustomer, createRoute, authFetch } from "../services/api";
++import { API_BASE } from "../config";
+ import { round2, calculateItemRow, calculateInvoiceTotals } from "../utils/invoiceCalc";
+ 
+ const EMPTY_ITEM = { description: "", serial_no: "", qty: 1, rate: "" };
+@@ -320,9 +321,9 @@ export default function NewInvoice() {
+   async function handlePrint() {
+     if (!createdInvoice || printing) return;
+     setPrinting(true);
+-    const API = "http://localhost:8000/api";
++    const API = API_BASE;
+     try {
+-      const res = await fetch(`${API}/invoices/${createdInvoice.id}/pdf`);
++      const res = await authFetch(`${API}/invoices/${createdInvoice.id}/pdf`);
+       if (!res.ok) {
+         const err = await res.json().catch(() => ({}));
+         alert(`PDF error: ${err.detail || "Unknown error"}`);
+diff --git a/frontend/src/pages/VATReport.jsx b/frontend/src/pages/VATReport.jsx
+index 0d5872f..b926740 100644
+--- a/frontend/src/pages/VATReport.jsx
++++ b/frontend/src/pages/VATReport.jsx
+@@ -11,8 +11,10 @@ import {
+   RefreshCw, Download, CheckCircle,
+   AlertTriangle, ShieldCheck, FileText
+ } from "lucide-react";
++import { API_BASE } from "../config";
++import { authFetch } from "../services/api";
+ 
+-const API = "http://localhost:8000/api";
++const API = API_BASE;
+ 
+ const fmtLKR = (n) =>
+   `Rs. ${Number(n || 0).toLocaleString("en-LK", { minimumFractionDigits: 2 })}`;
+@@ -44,7 +46,7 @@ export default function VATReport() {
+   async function fetchReport() {
+     setLoading(true); setError(null);
+     try {
+-      const res = await fetch(`${API}/vat-report/summary?year=${year}&month=${month}`);
++      const res = await authFetch(`${API}/vat-report/summary?year=${year}&month=${month}`);
+       if (!res.ok) throw new Error("Failed");
+       setReport(await res.json());
+     } catch {
+@@ -58,7 +60,7 @@ export default function VATReport() {
+     )) return;
+     setMarking(true);
+     try {
+-      const res = await fetch(
++      const res = await authFetch(
+         `${API}/vat-report/mark-all-posted?year=${year}&month=${month}`,
+         { method: "POST" }
+       );
+@@ -73,7 +75,7 @@ export default function VATReport() {
+   async function handleDownloadPDF() {
+     setDlLoad(true);
+     try {
+-      const res = await fetch(`${API}/vat-report/pdf?year=${year}&month=${month}`);
++      const res = await authFetch(`${API}/vat-report/pdf?year=${year}&month=${month}`);
+       if (!res.ok) { showToast("PDF generation failed.", "error"); return; }
+       const blob = await res.blob();
+       const url  = URL.createObjectURL(blob);
+diff --git a/frontend/src/services/api.js b/frontend/src/services/api.js
+index 496d7b9..1ab47d8 100644
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -8,12 +8,82 @@
+  */
+ 
+ import axios from "axios";
++import { API_BASE } from "../config";
+ 
+-// Your FastAPI server address
+-const BASE = "http://localhost:8000/api";
++const BASE = API_BASE;
+ 
+ const api = axios.create({ baseURL: BASE });
+ 
++// ── Attach the saved JWT to every request automatically ────────
++// Analogy: this is the doorman checking your wristband before you
++// even reach the front desk — every single api.get/post/etc call
++// passes through here first, so no page has to remember to add the
++// header itself.
++api.interceptors.request.use((config) => {
++  const token = localStorage.getItem("cc_token");
++  if (token) {
++    config.headers.Authorization = `Bearer ${token}`;
++  }
++  return config;
++});
++
++// ── If the token is rejected (expired / invalid), log out cleanly ──
++// A 401 from ANY endpoint means "your session is no longer valid" —
++// so we clear the stored token and bounce to /login rather than
++// leaving the user stuck looking at a broken page.
++api.interceptors.response.use(
++  (response) => response,
++  (error) => {
++    if (error.response?.status === 401 && !error.config.url.includes("/auth/login")) {
++      localStorage.removeItem("cc_token");
++      localStorage.removeItem("cc_user");
++      if (window.location.pathname !== "/login") {
++        window.location.href = "/login";
++      }
++    }
++    return Promise.reject(error);
++  }
++);
++
++// ── Raw fetch with auth header attached ─────────────────────
++// PDF downloads and a couple of pages use the browser's native fetch()
++// directly (usually because they need the raw Response/blob, not JSON
++// via axios). Since every backend route now requires a token, those
++// calls need the same Authorization header the axios interceptor
++// above adds automatically — this helper does that for plain fetch.
++export function authFetch(url, options = {}) {
++  const token = localStorage.getItem("cc_token");
++  const headers = { ...(options.headers || {}) };
++  if (token) headers.Authorization = `Bearer ${token}`;
++  return fetch(url, { ...options, headers });
++}
++
++export { BASE as API_BASE_URL };
++
++// ── Auth ─────────────────────────────────────────────────────
++/**
++ * FastAPI's OAuth2PasswordRequestForm expects form-encoded data,
++ * not JSON — so we build a URLSearchParams body instead of a plain
++ * object here. This is the one endpoint that looks different from
++ * every other call in this file.
++ */
++export const login = (username, password) => {
++  const form = new URLSearchParams();
++  form.append("username", username);
++  form.append("password", password);
++  return axios
++    .post(`${BASE}/auth/login`, form, {
++      headers: { "Content-Type": "application/x-www-form-urlencoded" },
++    })
++    .then((r) => r.data);
++};
++
++export const getMe = () => api.get("/auth/me").then((r) => r.data);
++
++export const getUsers = () => api.get("/auth/users").then((r) => r.data);
++
++export const createUser = (data) => api.post("/auth/users", data).then((r) => r.data);
++
+ // ── Invoices ─────────────────────────────────────────────────
+ export const getInvoices = (params) =>
+   api.get("/invoices", { params }).then((r) => r.data);
