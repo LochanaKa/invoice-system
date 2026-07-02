@@ -21,6 +21,29 @@ from datetime import date, datetime
 from decimal import Decimal
 
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+class UserOut(BaseModel):
+    id:        int
+    username:  str
+    is_admin:  bool
+    rep_id:    Optional[int] = None
+    rep_name:  Optional[str] = None
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type:   str
+    user:         UserOut
+
+
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6)
+    rep_id:   Optional[int] = None
+    is_admin: bool = False
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 class SettingsOut(BaseModel):

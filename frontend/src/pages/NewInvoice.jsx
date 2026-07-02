@@ -11,7 +11,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate }         from "react-router-dom";
 import { Plus, Trash2, Info }  from "lucide-react";
-import { getLookups, getCustomers, createInvoice, getSettings, getNextInvoiceNumber, createCustomer, createRoute } from "../services/api";
+import { getLookups, getCustomers, createInvoice, getSettings, getNextInvoiceNumber, createCustomer, createRoute, authFetch } from "../services/api";
+import { API_BASE } from "../config";
 import { round2, calculateItemRow, calculateInvoiceTotals } from "../utils/invoiceCalc";
 
 const EMPTY_ITEM = { description: "", serial_no: "", qty: 1, rate: "" };
@@ -320,9 +321,9 @@ export default function NewInvoice() {
   async function handlePrint() {
     if (!createdInvoice || printing) return;
     setPrinting(true);
-    const API = "http://localhost:8000/api";
+    const API = API_BASE;
     try {
-      const res = await fetch(`${API}/invoices/${createdInvoice.id}/pdf`);
+      const res = await authFetch(`${API}/invoices/${createdInvoice.id}/pdf`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         alert(`PDF error: ${err.detail || "Unknown error"}`);

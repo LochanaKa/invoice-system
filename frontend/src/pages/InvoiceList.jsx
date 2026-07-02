@@ -5,9 +5,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, RefreshCw, ChevronRight, Trash2, AlertTriangle, Download } from "lucide-react";
-import { getInvoices, deleteInvoice } from "../services/api";
+import { getInvoices, deleteInvoice, authFetch } from "../services/api";
+import { API_BASE } from "../config";
 
-const API = "http://localhost:8000/api";
+const API = API_BASE;
 
 const formatLKR = (n) =>
   `Rs. ${Number(n).toLocaleString("en-LK", { minimumFractionDigits: 2 })}`;
@@ -20,7 +21,7 @@ const formatDate = (d) =>
 // ── PDF download helper ───────────────────────────────────────
 async function downloadPDF(invoiceId, invoiceNumber) {
   try {
-    const res = await fetch(`${API}/invoices/${invoiceId}/pdf`);
+    const res = await authFetch(`${API}/invoices/${invoiceId}/pdf`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       alert(`PDF error: ${err.detail || "Unknown error"}`);

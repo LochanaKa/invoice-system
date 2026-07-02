@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, Download, FileText } from "lucide-react";
+import { API_BASE } from "../config";
+import { authFetch } from "../services/api";
 
-const API = "http://localhost:8000/api";
+const API = API_BASE;
 
 const fmtLKR = (n) =>
   `Rs. ${Number(n || 0).toLocaleString("en-LK", { minimumFractionDigits: 2 })}`;
@@ -30,7 +32,7 @@ export default function AllInclusiveReport() {
   async function fetchReport() {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`${API}/all-inclusive-report/summary?year=${year}&month=${month}`);
+      const res = await authFetch(`${API}/all-inclusive-report/summary?year=${year}&month=${month}`);
       if (!res.ok) throw new Error("Failed");
       setReport(await res.json());
     } catch {
@@ -41,7 +43,7 @@ export default function AllInclusiveReport() {
   async function handleDownloadPDF() {
     setDlLoad(true);
     try {
-      const res = await fetch(`${API}/all-inclusive-report/pdf?year=${year}&month=${month}`);
+      const res = await authFetch(`${API}/all-inclusive-report/pdf?year=${year}&month=${month}`);
       if (!res.ok) { showToast("PDF generation failed.", "error"); return; }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);

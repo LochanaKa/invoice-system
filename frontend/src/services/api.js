@@ -8,11 +8,81 @@
  */
 
 import axios from "axios";
+import { API_BASE } from "../config";
 
-// Your FastAPI server address
-const BASE = "http://localhost:8000/api";
+const BASE = API_BASE;
 
 const api = axios.create({ baseURL: BASE });
+
+// ── Attach the saved JWT to every request automatically ────────
+// Analogy: this is the doorman checking your wristband before you
+// even reach the front desk — every single api.get/post/etc call
+// passes through here first, so no page has to remember to add the
+// header itself.
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("cc_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// ── If the token is rejected (expired / invalid), log out cleanly ──
+// A 401 from ANY endpoint means "your session is no longer valid" —
+// so we clear the stored token and bounce to /login rather than
+// leaving the user stuck looking at a broken page.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && !error.config.url.includes("/auth/login")) {
+      localStorage.removeItem("cc_token");
+      localStorage.removeItem("cc_user");
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// ── Raw fetch with auth header attached ─────────────────────
+// PDF downloads and a couple of pages use the browser's native fetch()
+// directly (usually because they need the raw Response/blob, not JSON
+// via axios). Since every backend route now requires a token, those
+// calls need the same Authorization header the axios interceptor
+// above adds automatically — this helper does that for plain fetch.
+export function authFetch(url, options = {}) {
+  const token = localStorage.getItem("cc_token");
+  const headers = { ...(options.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(url, { ...options, headers });
+}
+
+export { BASE as API_BASE_URL };
+
+// ── Auth ─────────────────────────────────────────────────────
+/**
+ * FastAPI's OAuth2PasswordRequestForm expects form-encoded data,
+ * not JSON — so we build a URLSearchParams body instead of a plain
+ * object here. This is the one endpoint that looks different from
+ * every other call in this file.
+ */
+export const login = (username, password) => {
+  const form = new URLSearchParams();
+  form.append("username", username);
+  form.append("password", password);
+  return axios
+    .post(`${BASE}/auth/login`, form, {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    })
+    .then((r) => r.data);
+};
+
+export const getMe = () => api.get("/auth/me").then((r) => r.data);
+
+export const getUsers = () => api.get("/auth/users").then((r) => r.data);
+
+export const createUser = (data) => api.post("/auth/users", data).then((r) => r.data);
 
 // ── Invoices ─────────────────────────────────────────────────
 export const getInvoices = (params) =>

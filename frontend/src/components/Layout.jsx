@@ -7,11 +7,12 @@
  *   • Logo:    SVG C-mark mirroring the real logo
  */
 
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FileText, PlusCircle,
-  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive
+  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive, LogOut
 } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 const navItems = [
   { to: "/dashboard",    icon: LayoutDashboard, label: "Dashboard"        },
@@ -53,6 +54,14 @@ function getGreeting() {
 }
 
 export default function Layout() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    logout();
+    navigate("/login", { replace: true });
+  }
+
   return (
     <div className="flex h-screen font-sans" style={{ background: "#f0f4ff" }}>
 
@@ -193,7 +202,7 @@ export default function Layout() {
             </span>
           </div>
 
-          {/* Right: attractive greeting badge */}
+          {/* Right: current user + logout */}
           <div className="flex items-center gap-2.5">
             <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border shadow-sm text-sm font-semibold"
                   style={{
@@ -203,7 +212,7 @@ export default function Layout() {
                     boxShadow: "0 4px 12px rgba(31, 60, 138, 0.08)",
                   }}>
               <span className="text-base leading-none">☀️</span>
-              <span>{getGreeting()}</span>
+              <span>{getGreeting()}{user?.rep_name ? `, ${user.rep_name}` : ""}</span>
             </span>
             {/* Small animated green dot — "live" indicator */}
             <span className="relative flex h-2.5 w-2.5">
@@ -212,6 +221,17 @@ export default function Layout() {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5"
                     style={{ background: "#27AE60" }} />
             </span>
+            <button
+              onClick={handleLogout}
+              title="Log out"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm
+                         font-medium text-gray-500 hover:text-red-600 hover:border-red-200
+                         hover:bg-red-50 transition-colors"
+              style={{ borderColor: "#d5dcf5" }}
+            >
+              <LogOut size={14} />
+              Log Out
+            </button>
           </div>
         </header>
 

@@ -11,8 +11,10 @@ import {
   RefreshCw, Download, CheckCircle,
   AlertTriangle, ShieldCheck, FileText
 } from "lucide-react";
+import { API_BASE } from "../config";
+import { authFetch } from "../services/api";
 
-const API = "http://localhost:8000/api";
+const API = API_BASE;
 
 const fmtLKR = (n) =>
   `Rs. ${Number(n || 0).toLocaleString("en-LK", { minimumFractionDigits: 2 })}`;
@@ -44,7 +46,7 @@ export default function VATReport() {
   async function fetchReport() {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`${API}/vat-report/summary?year=${year}&month=${month}`);
+      const res = await authFetch(`${API}/vat-report/summary?year=${year}&month=${month}`);
       if (!res.ok) throw new Error("Failed");
       setReport(await res.json());
     } catch {
@@ -58,7 +60,7 @@ export default function VATReport() {
     )) return;
     setMarking(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API}/vat-report/mark-all-posted?year=${year}&month=${month}`,
         { method: "POST" }
       );
@@ -73,7 +75,7 @@ export default function VATReport() {
   async function handleDownloadPDF() {
     setDlLoad(true);
     try {
-      const res = await fetch(`${API}/vat-report/pdf?year=${year}&month=${month}`);
+      const res = await authFetch(`${API}/vat-report/pdf?year=${year}&month=${month}`);
       if (!res.ok) { showToast("PDF generation failed.", "error"); return; }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);

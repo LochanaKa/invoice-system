@@ -85,6 +85,30 @@ class UserPreference(Base):
     updated_at       = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class User(Base):
+    """
+    A login account. Optionally linked to a Rep (rep_id) so that when
+    'Asanka' logs in, invoices they create can be attributed to the
+    Asanka rep record automatically — no separate "who created this"
+    field needed elsewhere.
+
+    is_admin distinguishes staff who can manage Settings/Staff/Backups
+    from ordinary reps who should only see invoices/customers/dashboard.
+    """
+    __tablename__ = "users"
+
+    id            = Column(Integer, primary_key=True)
+    username      = Column(String(50), nullable=False, unique=True)
+    password_hash = Column(String(100), nullable=False)
+    rep_id        = Column(Integer, ForeignKey("reps.id"), nullable=True)
+    is_admin      = Column(Boolean, default=False)
+    is_active     = Column(Boolean, default=True)
+    created_at    = Column(DateTime, server_default=func.now())
+    last_login    = Column(DateTime, nullable=True)
+
+    rep = relationship("Rep")
+
+
 class Route(Base):
     __tablename__ = "routes"
 

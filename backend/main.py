@@ -14,16 +14,17 @@ Then open: http://localhost:8000/docs
 (FastAPI auto-generates interactive API documentation — try it!)
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 
-from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes,  backup_router,  preferences
+from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes,  backup_router,  preferences, auth_router
 from database import engine
 from models import Base
 from migrations import run_startup_migrations
+from auth import get_current_user
 
 # ── Auto-create any missing tables on startup ─────────────────────────────────
 # This is non-destructive: existing tables and their data are never touched.
@@ -55,17 +56,26 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # ── Routers ───────────────────────────────────────────────────
-app.include_router(invoices.router,   prefix="/api")
-app.include_router(customers.router,  prefix="/api")
-app.include_router(dashboard.router,  prefix="/api")
-app.include_router(pdf_router.router, prefix="/api")   # ← PDF
-app.include_router(settings.router,   prefix="/api")   # ← Settings
-app.include_router(vat_report.router, prefix="/api") #  ← VAT report
-app.include_router(all_inc_report.router, prefix="/api") #  ← All-Inclusive report
-app.include_router(reps.router,       prefix="/api") #  ← Staff management
-app.include_router(routes.router,     prefix="/api") #  ← Routes CRUD
-app.include_router(preferences.router, prefix="/api") #  ← Dashboard layout preferences
-app.include_router(backup_router.router, prefix="/api") #  ← Backup management
+# auth_router is deliberately NOT protected — you can't require a login
+# token to reach the endpoint that hands out login tokens.
+app.include_router(auth_router.router, prefix="/api")
+
+# Every other router requires a valid JWT. Adding `dependencies=[...]`
+# here runs get_current_user before ANY route in that router — one line
+# protects the whole file instead of editing every endpoint individually.
+protected = {"dependencies": [Depends(get_current_user)]}
+
+app.include_router(invoices.router,   prefix="/api", **protected)
+app.include_router(customers.router,  prefix="/api", **protected)
+app.include_router(dashboard.router,  prefix="/api", **protected)
+app.include_router(pdf_router.router, prefix="/api", **protected)   # ← PDF
+app.include_router(settings.router,   prefix="/api", **protected)   # ← Settings
+app.include_router(vat_report.router, prefix="/api", **protected) #  ← VAT report
+app.include_router(all_inc_report.router, prefix="/api", **protected) #  ← All-Inclusive report
+app.include_router(reps.router,       prefix="/api", **protected) #  ← Staff management
+app.include_router(routes.router,     prefix="/api", **protected) #  ← Routes CRUD
+app.include_router(preferences.router, prefix="/api", **protected) #  ← Dashboard layout preferences
+app.include_router(backup_router.router, prefix="/api", **protected) #  ← Backup management
 
 @app.get("/", tags=["Health"])
 def root():

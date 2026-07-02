@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { API_BASE } from "../config";
+import { authFetch } from "../services/api";
 const API = API_BASE;
 
 const fmtDate = (iso) => iso
@@ -35,8 +36,8 @@ export default function BackupManager() {
     setLoading(true);
     try {
       const [s, b] = await Promise.all([
-        fetch(`${API}/backup/status`).then(r => r.json()),
-        fetch(`${API}/backup/list`).then(r => r.json()),
+        authFetch(`${API}/backup/status`).then(r => r.json()),
+        authFetch(`${API}/backup/list`).then(r => r.json()),
       ]);
       setStatus(s);
       setBackups(b.backups || []);
@@ -48,7 +49,7 @@ export default function BackupManager() {
   async function handleRunNow() {
     setRunning(true);
     try {
-      const res = await fetch(`${API}/backup/run`, { method: "POST" });
+      const res = await authFetch(`${API}/backup/run`, { method: "POST" });
       const data = await res.json();
       showToast("Backup started! Refreshing in 12 seconds…", "success");
       setTimeout(() => { loadAll(); setRunning(false); }, 12000);
