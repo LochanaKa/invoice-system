@@ -80,6 +80,9 @@ export const login = (username, password) => {
 
 export const getMe = () => api.get("/auth/me").then((r) => r.data);
 
+export const changePassword = (current_password, new_password) =>
+  api.patch("/auth/change-password", { current_password, new_password }).then((r) => r.data);
+
 export const getUsers = () => api.get("/auth/users").then((r) => r.data);
 
 export const createUser = (data) => api.post("/auth/users", data).then((r) => r.data);

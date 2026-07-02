@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import User
 from auth import verify_password, hash_password, create_access_token, get_current_user
-from schemas import TokenResponse, UserOut, UserCreate
+from schemas import TokenResponse, UserOut, UserCreate, PasswordChange
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -72,6 +72,28 @@ def get_me(current_user: User = Depends(get_current_user)):
         rep_id=current_user.rep_id,
         rep_name=current_user.rep.name if current_user.rep else None,
     )
+
+
+@router.patch("/change-password", status_code=200)
+def change_password(
+    payload: PasswordChange,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Any logged-in user can change their OWN password — no admin check
+    needed here, since current_user comes from a verified token (you
+    can only be "logged in as yourself"). We still require the current
+    password though, so someone who grabs an unlocked laptop for a
+    minute can't silently lock the real owner out.
+    """
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
+
+    return {"message": "Password changed successfully."}
 
 
 def _require_admin(current_user: User) -> None:

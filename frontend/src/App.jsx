@@ -12,6 +12,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Layout        from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login          from "./pages/Login";
+import ChangePassword from "./pages/ChangePassword";
 import Dashboard     from "./pages/Dashboard";
 import InvoiceList   from "./pages/InvoiceList";
 import NewInvoice    from "./pages/NewInvoice";
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="vat-report"   element={<VATReport />} />
           <Route path="all-inclusive-report" element={<AllInclusiveReport />} />
           <Route path="backup"       element={<BackupManager />} />
+          <Route path="change-password" element={<ChangePassword />} />
         </Route>
       </Route>
     </Routes>

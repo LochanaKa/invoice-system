@@ -10,7 +10,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FileText, PlusCircle,
-  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive, LogOut
+  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive, LogOut, KeyRound
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -221,6 +221,17 @@ export default function Layout() {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5"
                     style={{ background: "#27AE60" }} />
             </span>
+            <NavLink
+              to="/change-password"
+              title="Change your password"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm
+                         font-medium text-gray-500 hover:text-cc-blue-600 hover:border-cc-blue-200
+                         hover:bg-cc-blue-50 transition-colors"
+              style={{ borderColor: "#d5dcf5" }}
+            >
+              <KeyRound size={14} />
+              Change Password
+            </NavLink>
             <button
               onClick={handleLogout}
               title="Log out"

@@ -44,6 +44,11 @@ class UserCreate(BaseModel):
     is_admin: bool = False
 
 
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password:      str = Field(..., min_length=6)
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 class SettingsOut(BaseModel):

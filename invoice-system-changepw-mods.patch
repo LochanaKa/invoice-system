@@ -1,0 +1,113 @@
+--- a/backend/routers/auth_router.py
++++ b/backend/routers/auth_router.py
+@@ -15,7 +15,7 @@
+ from database import get_db
+ from models import User
+ from auth import verify_password, hash_password, create_access_token, get_current_user
+-from schemas import TokenResponse, UserOut, UserCreate
++from schemas import TokenResponse, UserOut, UserCreate, PasswordChange
+ 
+ router = APIRouter(prefix="/auth", tags=["Auth"])
+ 
+@@ -74,6 +74,28 @@
+     )
+ 
+ 
++@router.patch("/change-password", status_code=200)
++def change_password(
++    payload: PasswordChange,
++    current_user: User = Depends(get_current_user),
++    db: Session = Depends(get_db),
++):
++    """
++    Any logged-in user can change their OWN password — no admin check
++    needed here, since current_user comes from a verified token (you
++    can only be "logged in as yourself"). We still require the current
++    password though, so someone who grabs an unlocked laptop for a
++    minute can't silently lock the real owner out.
++    """
++    if not verify_password(payload.current_password, current_user.password_hash):
++        raise HTTPException(status_code=401, detail="Current password is incorrect.")
++
++    current_user.password_hash = hash_password(payload.new_password)
++    db.commit()
++
++    return {"message": "Password changed successfully."}
++
++
+ def _require_admin(current_user: User) -> None:
+     if not current_user.is_admin:
+         raise HTTPException(status_code=403, detail="Admin access required.")
+--- a/backend/schemas.py
++++ b/backend/schemas.py
+@@ -44,6 +44,11 @@
+     is_admin: bool = False
+ 
+ 
++class PasswordChange(BaseModel):
++    current_password: str
++    new_password:      str = Field(..., min_length=6)
++
++
+ # ── Settings ──────────────────────────────────────────────────────────────────
+ 
+ class SettingsOut(BaseModel):
+--- a/frontend/src/App.jsx
++++ b/frontend/src/App.jsx
+@@ -12,6 +12,7 @@
+ import Layout        from "./components/Layout";
+ import ProtectedRoute from "./components/ProtectedRoute";
+ import Login          from "./pages/Login";
++import ChangePassword from "./pages/ChangePassword";
+ import Dashboard     from "./pages/Dashboard";
+ import InvoiceList   from "./pages/InvoiceList";
+ import NewInvoice    from "./pages/NewInvoice";
+@@ -51,6 +52,7 @@
+           <Route path="vat-report"   element={<VATReport />} />
+           <Route path="all-inclusive-report" element={<AllInclusiveReport />} />
+           <Route path="backup"       element={<BackupManager />} />
++          <Route path="change-password" element={<ChangePassword />} />
+         </Route>
+       </Route>
+     </Routes>
+--- a/frontend/src/components/Layout.jsx
++++ b/frontend/src/components/Layout.jsx
+@@ -10,7 +10,7 @@
+ import { NavLink, Outlet, useNavigate } from "react-router-dom";
+ import {
+   LayoutDashboard, FileText, PlusCircle,
+-  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive, LogOut
++  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive, LogOut, KeyRound
+ } from "lucide-react";
+ import { useAuth } from "../context/AuthContext";
+ 
+@@ -221,6 +221,17 @@
+               <span className="relative inline-flex rounded-full h-2.5 w-2.5"
+                     style={{ background: "#27AE60" }} />
+             </span>
++            <NavLink
++              to="/change-password"
++              title="Change your password"
++              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm
++                         font-medium text-gray-500 hover:text-cc-blue-600 hover:border-cc-blue-200
++                         hover:bg-cc-blue-50 transition-colors"
++              style={{ borderColor: "#d5dcf5" }}
++            >
++              <KeyRound size={14} />
++              Change Password
++            </NavLink>
+             <button
+               onClick={handleLogout}
+               title="Log out"
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -80,6 +80,9 @@
+ 
+ export const getMe = () => api.get("/auth/me").then((r) => r.data);
+ 
++export const changePassword = (current_password, new_password) =>
++  api.patch("/auth/change-password", { current_password, new_password }).then((r) => r.data);
++
+ export const getUsers = () => api.get("/auth/users").then((r) => r.data);
+ 
+ export const createUser = (data) => api.post("/auth/users", data).then((r) => r.data);
