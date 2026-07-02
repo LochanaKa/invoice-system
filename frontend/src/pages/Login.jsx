@@ -39,17 +39,8 @@ export default function Login() {
 
         {/* Logo / brand */}
         <div className="flex flex-col items-center mb-8">
-          <div className="relative w-14 h-14 rounded-2xl overflow-hidden shadow-lg mb-4"
-               style={{ background: "#27AE60" }}>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-white font-black text-2xl leading-none"
-                    style={{ fontFamily: "Georgia, serif" }}>C</span>
-            </div>
-            <div className="absolute inset-0"
-                 style={{
-                   background: "linear-gradient(135deg, #1F3C8A 50%, transparent 50%)",
-                   opacity: 0.85,
-                 }} />
+          <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-lg mb-4 bg-white">
+            <img src="/cc_logo.png" alt="Creative Computers Logo" className="w-full h-full object-cover" />
           </div>
           <div className="text-white font-bold text-lg leading-tight tracking-wide text-center">
             CREATIVE COMPUTERS

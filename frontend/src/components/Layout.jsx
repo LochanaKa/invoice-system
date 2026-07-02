@@ -10,7 +10,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FileText, PlusCircle,
-  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, FileSpreadsheet, HardDrive, LogOut, KeyRound
+  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, HardDrive, LogOut, KeyRound
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -21,8 +21,7 @@ const navItems = [
   { to: "/customers",    icon: Users,           label: "Customers"        },
   { to: "/staff",        icon: UserCog,         label: "Staff Management" },
   { to: "/credit",       icon: AlertCircle,     label: "Credit Aging"     },
-  { to: "/vat-report",   icon: FileSpreadsheet, label: "VAT Report"       },
-  { to: "/all-inclusive-report", icon: FileText, label: "All-Inclusive" },
+  { to: "/reports",      icon: FileText,        label: "Reports"          },
 ];
 
 /** SVG replica of the Creative Computers "C" mark */
@@ -72,19 +71,9 @@ export default function Layout() {
         {/* Logo area */}
         <div className="px-5 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
-            {/* Logo mark */}
-            <div className="relative flex-shrink-0 w-10 h-10 rounded-xl overflow-hidden shadow-lg"
-                 style={{ background: "#27AE60" }}>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-white font-black text-lg leading-none"
-                      style={{ fontFamily: "Georgia, serif" }}>C</span>
-              </div>
-              {/* Blue triangle wedge */}
-              <div className="absolute inset-0"
-                   style={{
-                     background: "linear-gradient(135deg, #1F3C8A 50%, transparent 50%)",
-                     opacity: 0.85,
-                   }} />
+            {/* Logo image */}
+            <div className="flex-shrink-0 w-10 h-10 rounded-xl overflow-hidden shadow-lg bg-white">
+              <img src="/cc_logo.png" alt="Creative Computers Logo" className="w-full h-full object-cover" />
             </div>
 
             <div>

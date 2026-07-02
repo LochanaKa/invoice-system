@@ -23,8 +23,7 @@ import StaffManagement from "./pages/StaffManagement";
 import RepPortfolio    from "./pages/RepPortfolio";
 import CreditAging   from "./pages/CreditAging";
 import Settings      from "./pages/Settings";
-import VATReport     from "./pages/VATReport";
-import AllInclusiveReport from "./pages/AllInclusiveReport";
+import Reports from "./pages/Reports";
 import BackupManager  from "./pages/BackupManager";
 
 export default function App() {
@@ -49,8 +48,7 @@ export default function App() {
           <Route path="staff/:repId/portfolio" element={<RepPortfolio />} />
           <Route path="credit"       element={<CreditAging />} />
           <Route path="settings"     element={<Settings />} />
-          <Route path="vat-report"   element={<VATReport />} />
-          <Route path="all-inclusive-report" element={<AllInclusiveReport />} />
+          <Route path="reports"      element={<Reports />} />
           <Route path="backup"       element={<BackupManager />} />
           <Route path="change-password" element={<ChangePassword />} />
         </Route>
