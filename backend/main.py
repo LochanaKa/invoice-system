@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 
-from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes,  backup_router,  preferences, auth_router
+from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes,  backup_router,  preferences, auth_router, jobs
 from database import engine
 from models import Base
 from migrations import run_startup_migrations
@@ -76,6 +76,7 @@ app.include_router(reps.router,       prefix="/api", **protected) #  ← Staff m
 app.include_router(routes.router,     prefix="/api", **protected) #  ← Routes CRUD
 app.include_router(preferences.router, prefix="/api", **protected) #  ← Dashboard layout preferences
 app.include_router(backup_router.router, prefix="/api", **protected) #  ← Backup management
+app.include_router(jobs.router, prefix="/api", **protected) #  ← Job cards / repair tickets
 
 @app.get("/", tags=["Health"])
 def root():

@@ -10,7 +10,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FileText, PlusCircle,
-  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, HardDrive, LogOut, KeyRound
+  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, HardDrive, LogOut, KeyRound, ClipboardList
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -22,6 +22,7 @@ const navItems = [
   { to: "/staff",        icon: UserCog,         label: "Staff Management" },
   { to: "/credit",       icon: AlertCircle,     label: "Credit Aging"     },
   { to: "/reports",      icon: FileText,        label: "Reports"          },
+  { to: "/job-cards", icon: ClipboardList, label: "Job Cards" },
 ];
 
 /** SVG replica of the Creative Computers "C" mark */

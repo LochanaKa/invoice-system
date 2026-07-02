@@ -214,5 +214,61 @@ def run_startup_migrations(engine: Engine) -> None:
             "ON payments(recorded_by_rep_id)"
         ))
 
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS job_cards ("
+            "id SERIAL PRIMARY KEY, "
+            "customer_name VARCHAR(200) NOT NULL, "
+            "device_name VARCHAR(200) NOT NULL, "
+            "issue_description TEXT NOT NULL, "
+            "received_by_staff_id INTEGER REFERENCES reps(id), "
+            "paper_grn_reference VARCHAR(100), "
+            "intake_method VARCHAR(20) NOT NULL DEFAULT 'WALK_IN', "
+            "created_at TIMESTAMP DEFAULT NOW(), "
+            "updated_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS customer_name VARCHAR(200)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS device_name VARCHAR(200)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS issue_description TEXT"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS received_by_staff_id INTEGER REFERENCES reps(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS paper_grn_reference VARCHAR(100)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS intake_method VARCHAR(20) DEFAULT 'WALK_IN'"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS assigned_to_staff_id INTEGER REFERENCES reps(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'NEW'"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS notes TEXT"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'NORMAL'"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS due_date DATE"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS serial_number VARCHAR(100)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()"
+        ))
+
         _assign_staff_codes_and_roles(conn)
         _repair_serial_sequences(conn)

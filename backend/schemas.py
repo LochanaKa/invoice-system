@@ -15,7 +15,7 @@ schemas.py is the plated dish the customer sees.
 """
 
 from __future__ import annotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Any, Optional, List
 from datetime import date, datetime
 from decimal import Decimal
@@ -215,6 +215,58 @@ class InvoiceCreate(BaseModel):
     profit_margin_pct: Optional[Decimal] = None   # e.g. 0.20 for 20%
     sscl_pct:          Optional[Decimal] = None   # e.g. 0.025 for 2.5%
     vat_pct:           Optional[Decimal] = None   # e.g. 0.18 for 18%
+
+
+class JobCardCreate(BaseModel):
+    customer_name: str = Field(..., min_length=1, max_length=200)
+    device_name: str = Field(..., min_length=1, max_length=200)
+    issue_description: str = Field(..., min_length=1)
+    received_by_staff_id: int = Field(..., gt=0)
+    assigned_to_staff_id: Optional[int] = None
+    priority: Optional[str] = Field(default="NORMAL", max_length=20)
+    due_date: Optional[date] = None
+    serial_number: Optional[str] = Field(default=None, max_length=100)
+    paper_grn_reference: Optional[str] = None
+    intake_method: str = Field(default="WALK_IN", max_length=20)
+
+    @model_validator(mode="after")
+    def validate_intake_details(self):
+        if self.intake_method == "FIELD_GRN":
+            grn_ref = (self.paper_grn_reference or "").strip()
+            if not grn_ref:
+                raise ValueError("paper_grn_reference is required when intake_method is FIELD_GRN")
+        return self
+
+
+class JobCardResponse(BaseModel):
+    id: int
+    customer_name: str
+    device_name: str
+    issue_description: str
+    received_by_staff_id: int
+    received_by_staff_name: Optional[str] = None
+    assigned_to_staff_id: Optional[int] = None
+    assigned_to_staff_name: Optional[str] = None
+    priority: Optional[str] = "NORMAL"
+    due_date: Optional[date] = None
+    serial_number: Optional[str] = None
+    paper_grn_reference: Optional[str] = None
+    intake_method: str
+    status: str = "NEW"
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class JobCardUpdate(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    assigned_to_staff_id: Optional[int] = None
+    priority: Optional[str] = None
+    due_date: Optional[date] = None
+    serial_number: Optional[str] = None
 
 
 class InvoiceListItem(BaseModel):

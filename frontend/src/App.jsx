@@ -24,6 +24,9 @@ import RepPortfolio    from "./pages/RepPortfolio";
 import CreditAging   from "./pages/CreditAging";
 import Settings      from "./pages/Settings";
 import Reports from "./pages/Reports";
+import NewJobCard from "./pages/NewJobCard";
+import JobCards from "./pages/JobCards";
+import JobCardDetail from "./pages/JobCardDetail";
 import BackupManager  from "./pages/BackupManager";
 
 export default function App() {
@@ -49,6 +52,9 @@ export default function App() {
           <Route path="credit"       element={<CreditAging />} />
           <Route path="settings"     element={<Settings />} />
           <Route path="reports"      element={<Reports />} />
+          <Route path="job-cards" element={<JobCards />} />
+          <Route path="job-cards/new" element={<NewJobCard />} />
+          <Route path="job-cards/:id" element={<JobCardDetail />} />
           <Route path="backup"       element={<BackupManager />} />
           <Route path="change-password" element={<ChangePassword />} />
         </Route>

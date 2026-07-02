@@ -134,6 +134,30 @@ class Rep(Base):
 
     invoices     = relationship("Invoice",     back_populates="rep")
     appointments = relationship("Appointment", back_populates="rep")
+    job_cards    = relationship("JobCard", back_populates="received_by_staff", foreign_keys="[JobCard.received_by_staff_id]")
+
+
+class JobCard(Base):
+    __tablename__ = "job_cards"
+
+    id                      = Column(Integer, primary_key=True)
+    customer_name           = Column(String(200), nullable=False)
+    device_name             = Column(String(200), nullable=False)
+    issue_description       = Column(Text, nullable=False)
+    received_by_staff_id    = Column(Integer, ForeignKey("reps.id"), nullable=False)
+    assigned_to_staff_id    = Column(Integer, ForeignKey("reps.id"), nullable=True)
+    priority                = Column(String(20), nullable=False, default="MEDIUM")
+    due_date                = Column(Date, nullable=True)
+    serial_number           = Column(String(100), nullable=True)
+    paper_grn_reference     = Column(String(100), nullable=True)
+    intake_method           = Column(String(20), nullable=False, default="WALK_IN")
+    status                  = Column(String(20), nullable=False, default="NEW")
+    notes                   = Column(Text, nullable=True)
+    created_at              = Column(DateTime, server_default=func.now())
+    updated_at              = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    received_by_staff = relationship("Rep", foreign_keys=[received_by_staff_id], back_populates="job_cards")
+    assigned_to_staff = relationship("Rep", foreign_keys=[assigned_to_staff_id])
 
 
 class Customer(Base):

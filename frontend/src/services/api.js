@@ -232,6 +232,18 @@ export const reactivateRep = (id) =>
 export const updateRep = (id, data) =>
   api.patch(`/reps/${id}`, data).then((r) => r.data);
 
+export const createJobCard = (data) =>
+  api.post("/jobs", data).then((r) => r.data);
+
+export const getJobCards = () =>
+  api.get("/jobs").then((r) => r.data);
+
+export const getJobCard = (id) =>
+  api.get(`/jobs/${id}`).then((r) => r.data);
+
+export const updateJobCard = (id, data) =>
+  api.patch(`/jobs/${id}`, data).then((r) => r.data);
+
 export const getRepPortfolio = (repId) =>
   api.get(`/reps/${repId}/portfolio`).then((r) => r.data);
 
