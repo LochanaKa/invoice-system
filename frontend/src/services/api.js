@@ -261,3 +261,28 @@ export const getSettings = () =>
  */
 export const updateSettings = (data) =>
   api.patch("/settings", data).then((r) => r.data);
+
+export const searchBySerial = (serialNumber) =>
+  api.get(`/invoices/search-by-serial/${serialNumber}`).then((r) => r.data);
+
+/**
+ * Download the invoice PDF for a given invoice ID.
+ * Requests the binary PDF from the backend, creates a temporary object URL,
+ * triggers the browser's native file-save dialog, then cleans up.
+ *
+ * @param {number|string} invoiceId  - The invoice primary key
+ * @param {string}        filename   - Suggested filename (e.g. "CCFR-S00013.pdf")
+ */
+export const downloadInvoicePdf = async (invoiceId, filename) => {
+  const response = await api.get(`/invoices/${invoiceId}/pdf`, {
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || `invoice-${invoiceId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};

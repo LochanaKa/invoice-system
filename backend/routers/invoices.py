@@ -560,3 +560,33 @@ def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
     db.delete(inv)
     db.commit()
     return None
+
+
+@router.get("/search-by-serial/{serial_number}")
+def search_by_serial(serial_number: str, db: Session = Depends(get_db)):
+    """
+    Search if a serial number was ever sold.
+    Queries the invoice_items table and joins with invoices to return details.
+    """
+    clean_serial = serial_number.strip()
+    if not clean_serial:
+        raise HTTPException(status_code=400, detail="Serial number query cannot be empty")
+
+    item = (
+        db.query(InvoiceItem)
+        .filter(InvoiceItem.serial_no.ilike(clean_serial))
+        .order_by(InvoiceItem.created_at.desc())
+        .first()
+    )
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Serial number not found in sales history")
+
+    inv = item.invoice
+    return {
+        "invoice_id": inv.id,
+        "invoice_number": inv.invoice_number,
+        "invoice_date": inv.invoice_date,
+        "item_name": item.description,
+    }
+

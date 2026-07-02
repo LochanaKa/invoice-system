@@ -18,10 +18,10 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, Printer, CheckCircle, Clock, CreditCard,
+  ArrowLeft, FileDown, CheckCircle, Clock, CreditCard,
   Eye, EyeOff, RefreshCw, AlertCircle, ChevronRight
 } from "lucide-react";
-import { getInvoice, addPayment, markVatPosted, getReps } from "../services/api";
+import { getInvoice, addPayment, markVatPosted, getReps, downloadInvoicePdf } from "../services/api";
 
 const fmt = (n) =>
   `Rs. ${Number(n || 0).toLocaleString("en-LK", {
@@ -52,6 +52,21 @@ export default function InvoiceDetail() {
     payment_method: "CASH", amount: "", cheque_number: "", bank: "", date_of_payment: "", recorded_by_rep_id: "",
   });
   const [paying,    setPaying]    = useState(false);
+
+  // PDF download state
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownloadPdf() {
+    setDownloading(true);
+    try {
+      await downloadInvoicePdf(inv.id, `${inv.invoice_number}.pdf`);
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message || "PDF download failed.";
+      alert(detail);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   useEffect(() => {
     fetchInvoice();
@@ -156,6 +171,17 @@ export default function InvoiceDetail() {
               <CreditCard size={13} /> Record Payment
             </button>
           )}
+          <button
+            onClick={handleDownloadPdf}
+            disabled={downloading}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5
+                       bg-blue-600 hover:bg-blue-700 disabled:opacity-60
+                       text-white rounded-lg transition-colors"
+          >
+            {downloading
+              ? <><RefreshCw size={13} className="animate-spin" /> Generating…</>
+              : <><FileDown size={13} /> Download PDF</>}
+          </button>
         </div>
       </div>
 

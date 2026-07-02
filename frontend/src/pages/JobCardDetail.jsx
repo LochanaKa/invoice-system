@@ -102,6 +102,22 @@ export default function JobCardDetail() {
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Device</div>
               <div className="mt-1 text-base font-semibold text-gray-800">{card.device_name}</div>
+              {card.serial_number && (
+                <div className="mt-0.5 text-sm text-gray-500 font-mono">S/N: {card.serial_number}</div>
+              )}
+              {card.linked_sales_invoice_id && card.linked_sales_invoice_number && (
+                <div className="mt-1.5">
+                  <a
+                    href={`/invoices/${card.linked_sales_invoice_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-2.5 py-0.5 text-xs font-semibold text-green-700 hover:bg-green-100 transition-colors"
+                  >
+                    <span className="size-1.5 rounded-full bg-green-500 inline-block"></span>
+                    Sold on Invoice #{card.linked_sales_invoice_number}
+                  </a>
+                </div>
+              )}
             </div>
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Issue</div>

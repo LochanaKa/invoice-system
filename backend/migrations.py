@@ -272,6 +272,9 @@ def run_startup_migrations(engine: Engine) -> None:
         conn.execute(text(
             "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()"
         ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS linked_sales_invoice_id BIGINT REFERENCES invoices(id)"
+        ))
 
         _assign_staff_codes_and_roles(conn)
         _repair_serial_sequences(conn)

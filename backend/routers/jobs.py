@@ -20,28 +20,7 @@ def get_job_card(job_card_id: int, db: Session = Depends(get_db)):
     card = db.query(JobCard).filter(JobCard.id == job_card_id).first()
     if not card:
         raise HTTPException(status_code=404, detail="Job card not found.")
-
-    staff = db.query(Rep).filter(Rep.id == card.received_by_staff_id).first()
-    assigned_staff = db.query(Rep).filter(Rep.id == card.assigned_to_staff_id).first() if card.assigned_to_staff_id else None
-    return JobCardResponse(
-        id=card.id,
-        customer_name=card.customer_name,
-        customer_phone=card.customer_phone,
-        device_name=card.device_name,
-        issue_description=card.issue_description,
-        received_by_staff_id=card.received_by_staff_id,
-        received_by_staff_name=staff.name if staff else None,
-        assigned_to_staff_id=card.assigned_to_staff_id,
-        assigned_to_staff_name=assigned_staff.name if assigned_staff else None,
-        priority=card.priority,
-        due_date=card.due_date,
-        paper_grn_reference=card.paper_grn_reference,
-        intake_method=card.intake_method,
-        status=card.status,
-        notes=card.notes,
-        created_at=card.created_at,
-        updated_at=card.updated_at,
-    )
+    return card
 
 
 @router.post("", response_model=JobCardResponse, status_code=201)
@@ -67,31 +46,12 @@ def create_job_card(payload: JobCardCreate, db: Session = Depends(get_db)):
         serial_number=(payload.serial_number or "").strip() or None,
         paper_grn_reference=(payload.paper_grn_reference or "").strip() or None,
         intake_method=payload.intake_method,
+        linked_sales_invoice_id=payload.linked_sales_invoice_id,
     )
     db.add(card)
     db.commit()
     db.refresh(card)
-
-    assigned_staff = db.query(Rep).filter(Rep.id == card.assigned_to_staff_id).first() if card.assigned_to_staff_id else None
-    return JobCardResponse(
-        id=card.id,
-        customer_name=card.customer_name,
-        customer_phone=card.customer_phone,
-        device_name=card.device_name,
-        issue_description=card.issue_description,
-        received_by_staff_id=card.received_by_staff_id,
-        received_by_staff_name=staff.name,
-        assigned_to_staff_id=card.assigned_to_staff_id,
-        assigned_to_staff_name=assigned_staff.name if assigned_staff else None,
-        priority=card.priority,
-        due_date=card.due_date,
-        paper_grn_reference=card.paper_grn_reference,
-        intake_method=card.intake_method,
-        status=card.status,
-        notes=card.notes,
-        created_at=card.created_at,
-        updated_at=card.updated_at,
-    )
+    return card
 
 
 @router.patch("/{job_card_id}", response_model=JobCardResponse)
@@ -114,28 +74,9 @@ def update_job_card(job_card_id: int, payload: JobCardUpdate, db: Session = Depe
         card.due_date = payload.due_date
     if "serial_number" in payload.model_fields_set:
         card.serial_number = (payload.serial_number or "").strip() or None
+    if "linked_sales_invoice_id" in payload.model_fields_set:
+        card.linked_sales_invoice_id = payload.linked_sales_invoice_id
 
     db.commit()
     db.refresh(card)
-
-    staff = db.query(Rep).filter(Rep.id == card.received_by_staff_id).first()
-    assigned_staff = db.query(Rep).filter(Rep.id == card.assigned_to_staff_id).first() if card.assigned_to_staff_id else None
-    return JobCardResponse(
-        id=card.id,
-        customer_name=card.customer_name,
-        customer_phone=card.customer_phone,
-        device_name=card.device_name,
-        issue_description=card.issue_description,
-        received_by_staff_id=card.received_by_staff_id,
-        received_by_staff_name=staff.name if staff else None,
-        assigned_to_staff_id=card.assigned_to_staff_id,
-        assigned_to_staff_name=assigned_staff.name if assigned_staff else None,
-        priority=card.priority,
-        due_date=card.due_date,
-        paper_grn_reference=card.paper_grn_reference,
-        intake_method=card.intake_method,
-        status=card.status,
-        notes=card.notes,
-        created_at=card.created_at,
-        updated_at=card.updated_at,
-    )
+    return card

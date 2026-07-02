@@ -154,11 +154,25 @@ class JobCard(Base):
     intake_method           = Column(String(20), nullable=False, default="WALK_IN")
     status                  = Column(String(20), nullable=False, default="NEW")
     notes                   = Column(Text, nullable=True)
+    linked_sales_invoice_id = Column(BigInteger, ForeignKey("invoices.id"), nullable=True)
     created_at              = Column(DateTime, server_default=func.now())
     updated_at              = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     received_by_staff = relationship("Rep", foreign_keys=[received_by_staff_id], back_populates="job_cards")
     assigned_to_staff = relationship("Rep", foreign_keys=[assigned_to_staff_id])
+    linked_sales_invoice = relationship("Invoice")
+
+    @property
+    def received_by_staff_name(self):
+        return self.received_by_staff.name if self.received_by_staff else None
+
+    @property
+    def assigned_to_staff_name(self):
+        return self.assigned_to_staff.name if self.assigned_to_staff else None
+
+    @property
+    def linked_sales_invoice_number(self):
+        return self.linked_sales_invoice.invoice_number if self.linked_sales_invoice else None
 
 
 class Customer(Base):

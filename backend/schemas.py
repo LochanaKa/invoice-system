@@ -229,6 +229,7 @@ class JobCardCreate(BaseModel):
     serial_number: Optional[str] = Field(default=None, max_length=100)
     paper_grn_reference: Optional[str] = None
     intake_method: str = Field(default="WALK_IN", max_length=20)
+    linked_sales_invoice_id: Optional[int] = None
 
     @model_validator(mode="after")
     def validate_intake_details(self):
@@ -256,6 +257,8 @@ class JobCardResponse(BaseModel):
     intake_method: str
     status: str = "NEW"
     notes: Optional[str] = None
+    linked_sales_invoice_id: Optional[int] = None
+    linked_sales_invoice_number: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -270,6 +273,7 @@ class JobCardUpdate(BaseModel):
     priority: Optional[str] = None
     due_date: Optional[date] = None
     serial_number: Optional[str] = None
+    linked_sales_invoice_id: Optional[int] = None
 
 
 class InvoiceListItem(BaseModel):
