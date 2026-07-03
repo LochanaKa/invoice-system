@@ -276,5 +276,123 @@ def run_startup_migrations(engine: Engine) -> None:
             "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS linked_sales_invoice_id BIGINT REFERENCES invoices(id)"
         ))
 
+        # ── Stock Management tables (v2) ─────────────────────────────────────
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS suppliers ("
+            "id SERIAL PRIMARY KEY, "
+            "name VARCHAR(200) NOT NULL, "
+            "contact_person VARCHAR(100), "
+            "phone VARCHAR(30), "
+            "email VARCHAR(100), "
+            "address TEXT, "
+            "notes TEXT, "
+            "is_active BOOLEAN DEFAULT TRUE, "
+            "created_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+        # Back-fill columns that may be missing from a pre-notes suppliers table
+        conn.execute(text(
+            "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contact_person VARCHAR(100)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS phone VARCHAR(30)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS email VARCHAR(100)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS address TEXT"
+        ))
+        conn.execute(text(
+            "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS notes TEXT"
+        ))
+        conn.execute(text(
+            "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"
+        ))
+        conn.execute(text(
+            "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"
+        ))
+
+
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS stock_categories ("
+            "id SERIAL PRIMARY KEY, "
+            "name VARCHAR(100) NOT NULL UNIQUE, "
+            "is_active BOOLEAN DEFAULT TRUE, "
+            "created_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS stock_items ("
+            "id SERIAL PRIMARY KEY, "
+            "category_id INTEGER NOT NULL REFERENCES stock_categories(id), "
+            "brand VARCHAR(150), "
+            "model VARCHAR(150) NOT NULL, "
+            "description VARCHAR(300), "
+            "requires_serial BOOLEAN DEFAULT FALSE, "
+            "qty_on_hand INTEGER NOT NULL DEFAULT 0, "
+            "reorder_level INTEGER, "
+            "is_active BOOLEAN DEFAULT TRUE, "
+            "created_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS stock_receipts ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "supplier_id INTEGER NOT NULL REFERENCES suppliers(id), "
+            "received_date DATE NOT NULL, "
+            "reference_no VARCHAR(80), "
+            "received_by_rep_id INTEGER REFERENCES reps(id), "
+            "notes TEXT, "
+            "created_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS stock_receipt_items ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "receipt_id BIGINT NOT NULL REFERENCES stock_receipts(id), "
+            "stock_item_id INTEGER NOT NULL REFERENCES stock_items(id), "
+            "qty INTEGER NOT NULL DEFAULT 1, "
+            "unit_cost NUMERIC(12, 2) NOT NULL DEFAULT 0, "
+            "operation_cost_type VARCHAR(10) NOT NULL DEFAULT 'percentage', "
+            "operation_cost_value NUMERIC(12, 4) NOT NULL DEFAULT 0, "
+            "operation_cost_amount NUMERIC(12, 2) NOT NULL DEFAULT 0, "
+            "subtotal_after_opcost NUMERIC(12, 2) NOT NULL DEFAULT 0, "
+            "sscl_pct NUMERIC(8, 6) NOT NULL DEFAULT 0.025, "
+            "sscl_amount NUMERIC(12, 2) NOT NULL DEFAULT 0, "
+            "vat_pct NUMERIC(8, 6) NOT NULL DEFAULT 0.18, "
+            "vat_amount NUMERIC(12, 2) NOT NULL DEFAULT 0, "
+            "final_unit_price NUMERIC(12, 2) NOT NULL DEFAULT 0, "
+            "created_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS stock_units ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "receipt_item_id BIGINT NOT NULL REFERENCES stock_receipt_items(id), "
+            "stock_item_id INTEGER NOT NULL REFERENCES stock_items(id), "
+            "serial_number VARCHAR(200) NOT NULL UNIQUE, "
+            "status VARCHAR(20) NOT NULL DEFAULT 'in_stock', "
+            "sold_invoice_item_id BIGINT REFERENCES invoice_items(id), "
+            "warranty_months INTEGER, "
+            "created_at TIMESTAMP DEFAULT NOW(), "
+            "updated_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_stock_units_serial "
+            "ON stock_units(serial_number)"
+        ))
+
+        # Link invoice line items back to the catalog for stock decrement
+        conn.execute(text(
+            "ALTER TABLE invoice_items "
+            "ADD COLUMN IF NOT EXISTS stock_item_id INTEGER REFERENCES stock_items(id)"
+        ))
+
         _assign_staff_codes_and_roles(conn)
         _repair_serial_sequences(conn)

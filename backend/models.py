@@ -109,6 +109,156 @@ class User(Base):
     rep = relationship("Rep")
 
 
+class Supplier(Base):
+    """
+    A goods supplier — the company we purchase stock from.
+    One supplier can appear on many StockReceipts.
+    """
+    __tablename__ = "suppliers"
+
+    id             = Column(Integer,     primary_key=True)
+    name           = Column(String(200), nullable=False)
+    contact_person = Column(String(100), nullable=True)
+    phone          = Column(String(30),  nullable=True)
+    email          = Column(String(100), nullable=True)
+    address        = Column(Text,        nullable=True)
+    notes          = Column(Text,        nullable=True)
+    is_active      = Column(Boolean,     default=True)
+    created_at     = Column(DateTime,    server_default=func.now())
+
+
+class StockCategory(Base):
+    """
+    A product category (e.g. "Laptops", "Toners", "Cables").
+    Mirrors the Route model exactly — same minimal shape.
+    """
+    __tablename__ = "stock_categories"
+
+    id         = Column(Integer,     primary_key=True)
+    name       = Column(String(100), nullable=False, unique=True)
+    is_active  = Column(Boolean,     default=True)
+    created_at = Column(DateTime,    server_default=func.now())
+
+
+class StockItem(Base):
+    """
+    The product catalog — one row per distinct product SKU.
+
+    qty_on_hand is a cached running total:
+      - Incremented when stock is received (StockReceiptItem saved).
+      - Decremented when sold (InvoiceItem saved) or on manual adjustment.
+    For requires_serial=True items it should always equal the count of
+    StockUnits with status='in_stock' for this item.
+    """
+    __tablename__ = "stock_items"
+
+    id              = Column(Integer,     primary_key=True)
+    category_id     = Column(Integer,     ForeignKey("stock_categories.id"), nullable=False)
+    brand           = Column(String(150), nullable=True)
+    model           = Column(String(150), nullable=False)
+    description     = Column(String(300), nullable=True)   # if blank, frontend shows "{brand} {model}"
+    requires_serial = Column(Boolean,     default=False)   # True for laptops/monitors/printers
+    qty_on_hand     = Column(Integer,     nullable=False, default=0)
+    reorder_level   = Column(Integer,     nullable=True)   # optional low-stock threshold
+    is_active       = Column(Boolean,     default=True)
+    created_at      = Column(DateTime,    server_default=func.now())
+
+    category = relationship("StockCategory")
+
+
+class StockReceipt(Base):
+    """
+    One row per delivery from a supplier — a "Goods Received Note" (GRN).
+    The header; line items live in StockReceiptItem.
+    """
+    __tablename__ = "stock_receipts"
+
+    id                  = Column(BigInteger, primary_key=True)
+    supplier_id         = Column(Integer,    ForeignKey("suppliers.id"),  nullable=False)
+    received_date       = Column(Date,       nullable=False)
+    reference_no        = Column(String(80), nullable=True)   # supplier's own delivery note / invoice number
+    received_by_rep_id  = Column(Integer,    ForeignKey("reps.id"),       nullable=True)
+    notes               = Column(Text,       nullable=True)
+    created_at          = Column(DateTime,   server_default=func.now())
+
+    supplier         = relationship("Supplier")
+    received_by_rep  = relationship("Rep")
+    items            = relationship(
+        "StockReceiptItem",
+        back_populates="receipt",
+        cascade="all, delete-orphan",
+    )
+
+
+class StockReceiptItem(Base):
+    """
+    Pricing chain for one product line on a GRN.
+
+    Every rate and computed amount is stored permanently here (rate-snapshot
+    pattern — identical to InvoiceItem) so historical costs never change even
+    if global rates change later.
+
+    Calculation order per unit:
+      1. unit_cost                              (supplier charge)
+      2. + operation_cost_amount                (resolved from type+value)
+         = subtotal_after_opcost
+      3. + sscl_amount  (subtotal_after_opcost × sscl_pct)
+      4. + vat_amount   (subtotal_after_opcost × vat_pct)
+         = final_unit_price                     (customer-facing price)
+    """
+    __tablename__ = "stock_receipt_items"
+
+    id                      = Column(BigInteger,    primary_key=True)
+    receipt_id              = Column(BigInteger,    ForeignKey("stock_receipts.id"), nullable=False)
+    stock_item_id           = Column(Integer,       ForeignKey("stock_items.id"),   nullable=False)
+    qty                     = Column(Integer,       nullable=False, default=1)
+
+    # ── Cost chain (all snapshotted at save time) ──────────────────────────
+    unit_cost               = Column(Numeric(12, 2), nullable=False, default=0)   # supplier charge per unit
+
+    operation_cost_type     = Column(String(10),    nullable=False, default="percentage")  # 'percentage' or 'fixed'
+    operation_cost_value    = Column(Numeric(12, 4), nullable=False, default=0)   # raw number entered
+    operation_cost_amount   = Column(Numeric(12, 2), nullable=False, default=0)   # resolved Rs. per unit
+
+    subtotal_after_opcost   = Column(Numeric(12, 2), nullable=False, default=0)   # unit_cost + operation_cost_amount
+
+    sscl_pct                = Column(Numeric(8,  6), nullable=False, default=Decimal("0.025"))
+    sscl_amount             = Column(Numeric(12, 2), nullable=False, default=0)
+
+    vat_pct                 = Column(Numeric(8,  6), nullable=False, default=Decimal("0.18"))
+    vat_amount              = Column(Numeric(12, 2), nullable=False, default=0)
+
+    final_unit_price        = Column(Numeric(12, 2), nullable=False, default=0)   # customer-facing price per unit
+
+    created_at              = Column(DateTime,       server_default=func.now())
+
+    receipt    = relationship("StockReceipt", back_populates="items")
+    stock_item = relationship("StockItem")
+
+
+class StockUnit(Base):
+    """
+    One row per physical, individually-trackable unit.
+    Only created when the parent StockItem has requires_serial=True.
+
+    status values: 'in_stock' | 'sold' | 'returned' | 'warranty_replaced' | 'defective'
+    """
+    __tablename__ = "stock_units"
+
+    id                  = Column(BigInteger,    primary_key=True)
+    receipt_item_id     = Column(BigInteger,    ForeignKey("stock_receipt_items.id"), nullable=False)
+    stock_item_id       = Column(Integer,       ForeignKey("stock_items.id"),         nullable=False)
+    serial_number       = Column(String(200),   nullable=False, unique=True, index=True)
+    status              = Column(String(20),    nullable=False, default="in_stock")
+    sold_invoice_item_id = Column(BigInteger,   ForeignKey("invoice_items.id"),       nullable=True)
+    warranty_months     = Column(Integer,       nullable=True)
+    created_at          = Column(DateTime,      server_default=func.now())
+    updated_at          = Column(DateTime,      server_default=func.now(), onupdate=func.now())
+
+    receipt_item = relationship("StockReceiptItem")
+    stock_item   = relationship("StockItem")
+
+
 class Route(Base):
     __tablename__ = "routes"
 
@@ -291,15 +441,19 @@ class Payment(Base):
 class InvoiceItem(Base):
     __tablename__ = "invoice_items"
 
-    id          = Column(BigInteger, primary_key=True)
-    invoice_id  = Column(BigInteger, ForeignKey("invoices.id"), nullable=False)
-    line_number = Column(Integer, nullable=False, default=1)
-    description = Column(String(300), nullable=False)
-    serial_no   = Column(String(200))
-    qty         = Column(Integer, nullable=False, default=1)
-    raw_rate    = Column(Numeric(12, 2), nullable=False, default=0)  # staff-entered cost (internal)
-    rate        = Column(Numeric(12, 2), nullable=False, default=0)   # customer-facing unit price
-    amount      = Column(Numeric(12, 2), nullable=False, default=0)   # customer-facing line total
-    created_at  = Column(DateTime, server_default=func.now())
+    id            = Column(BigInteger, primary_key=True)
+    invoice_id    = Column(BigInteger, ForeignKey("invoices.id"),   nullable=False)
+    line_number   = Column(Integer,    nullable=False, default=1)
+    description   = Column(String(300), nullable=False)
+    serial_no     = Column(String(200))
+    qty           = Column(Integer,    nullable=False, default=1)
+    raw_rate      = Column(Numeric(12, 2), nullable=False, default=0)  # staff-entered cost (internal)
+    rate          = Column(Numeric(12, 2), nullable=False, default=0)  # customer-facing unit price
+    amount        = Column(Numeric(12, 2), nullable=False, default=0)  # customer-facing line total
+    # Links this sold line back to the catalog item so stock can be decremented.
+    # Nullable so all existing rows remain valid with no data migration needed.
+    stock_item_id = Column(Integer, ForeignKey("stock_items.id"), nullable=True)
+    created_at    = Column(DateTime, server_default=func.now())
 
-    invoice = relationship("Invoice", back_populates="items")
+    invoice    = relationship("Invoice", back_populates="items")
+    stock_item = relationship("StockItem")

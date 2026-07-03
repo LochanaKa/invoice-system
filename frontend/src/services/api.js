@@ -286,3 +286,59 @@ export const downloadInvoicePdf = async (invoiceId, filename) => {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
+
+// ── Stock Management ─────────────────────────────────────────
+export const getSuppliers = (params) =>
+  api.get("/suppliers", { params }).then((r) => r.data);
+
+export const getSupplier = (id) =>
+  api.get(`/suppliers/${id}`).then((r) => r.data);
+
+export const createSupplier = (data) =>
+  api.post("/suppliers", data).then((r) => r.data);
+
+export const updateSupplier = (id, data) =>
+  api.patch(`/suppliers/${id}`, data).then((r) => r.data);
+
+export const deleteSupplier = (id) =>
+  api.delete(`/suppliers/${id}`).then((r) => r.data);
+
+export const getStockCategories = () =>
+  api.get("/stock-categories").then((r) => r.data);
+
+export const createStockCategory = (data) =>
+  api.post("/stock-categories", data).then((r) => r.data);
+
+export const getStockItems = (params) =>
+  api.get("/stock-items", { params }).then((r) => r.data);
+
+export const getStockItem = (id) =>
+  api.get(`/stock-items/${id}`).then((r) => r.data);
+
+export const createStockItem = (data) =>
+  api.post("/stock-items", data).then((r) => r.data);
+
+export const updateStockItem = (id, data) =>
+  api.patch(`/stock-items/${id}`, data).then((r) => r.data);
+
+export const deleteStockItem = (id) =>
+  api.delete(`/stock-items/${id}`).then((r) => r.data);
+
+export const getStockReceipts = (params) =>
+  api.get("/stock-receipts", { params }).then((r) => r.data);
+
+export const getStockReceipt = (id) =>
+  api.get(`/stock-receipts/${id}`).then((r) => r.data);
+
+export const createStockReceipt = (data) =>
+  api.post("/stock-receipts", data).then((r) => r.data);
+
+export const addSerialsToReceiptItem = (receiptId, receiptItemId, serialNumbers) =>
+  api.post(`/stock-receipts/${receiptId}/items/${receiptItemId}/serials`, { serial_numbers: serialNumbers }).then((r) => r.data);
+
+export const getStockUnits = (params) =>
+  api.get("/stock-units", { params }).then((r) => r.data);
+
+export const lookupSerial = (serialNumber) =>
+  api.get(`/stock-units/lookup/${serialNumber}`).then((r) => r.data);
+

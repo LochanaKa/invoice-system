@@ -172,21 +172,23 @@ class PaymentCreate(BaseModel):
 # ── Invoice Items ─────────────────────────────────────────────
 
 class InvoiceItemIn(BaseModel):
-    description: str
-    serial_no:   Optional[str] = None
-    qty:         int = 1
-    rate:        Decimal = Decimal("0.00")   # raw cost per unit (staff-entered)
+    description:   str
+    serial_no:     Optional[str] = None
+    qty:           int = 1
+    rate:          Decimal = Decimal("0.00")   # raw cost per unit (staff-entered)
+    stock_item_id: Optional[int] = None        # links this line to the stock catalog
 
 class InvoiceItemOut(BaseModel):
-    id:          int
-    invoice_id:  int
-    line_number: int
-    description: str
-    serial_no:   Optional[str] = None
-    qty:         int
-    raw_rate:    Decimal       # internal raw cost per unit
-    rate:        Decimal       # customer-facing unit price
-    amount:      Decimal       # customer-facing line total
+    id:            int
+    invoice_id:    int
+    line_number:   int
+    description:   str
+    serial_no:     Optional[str] = None
+    qty:           int
+    raw_rate:      Decimal       # internal raw cost per unit
+    rate:          Decimal       # customer-facing unit price
+    amount:        Decimal       # customer-facing line total
+    stock_item_id: Optional[int] = None
     model_config = {"from_attributes": True}
 
 class InvoiceCreate(BaseModel):
@@ -530,4 +532,176 @@ class TopCustomerInvoiceOut(BaseModel):
     grand_total:    Decimal
     credit_balance: Decimal
 
+    model_config = {"from_attributes": True}
+
+
+# ── Stock Management ──────────────────────────────────────────────────────────
+
+class SupplierCreate(BaseModel):
+    name:           str = Field(..., min_length=1, max_length=200)
+    contact_person: Optional[str] = Field(None, max_length=100)
+    phone:          Optional[str] = Field(None, max_length=30)
+    email:          Optional[str] = Field(None, max_length=100)
+    address:        Optional[str] = None
+    notes:          Optional[str] = None
+
+
+class SupplierUpdate(BaseModel):
+    """All fields optional — for PATCH (partial update) requests."""
+    name:           Optional[str] = Field(None, min_length=1, max_length=200)
+    contact_person: Optional[str] = Field(None, max_length=100)
+    phone:          Optional[str] = Field(None, max_length=30)
+    email:          Optional[str] = Field(None, max_length=100)
+    address:        Optional[str] = None
+    notes:          Optional[str] = None
+    is_active:      Optional[bool] = None
+
+
+class SupplierOut(BaseModel):
+    id:             int
+    name:           str
+    contact_person: Optional[str] = None
+    phone:          Optional[str] = None
+    email:          Optional[str] = None
+    address:        Optional[str] = None
+    notes:          Optional[str] = None
+    is_active:      bool
+    created_at:     Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+# StockCategory mirrors RouteCreate/RouteOut exactly — same minimal shape.
+
+class StockCategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class StockCategoryOut(BaseModel):
+    id:        int
+    name:      str
+    is_active: bool = True
+    model_config = {"from_attributes": True}
+
+
+class StockItemCreate(BaseModel):
+    category_id:     int
+    brand:           Optional[str] = Field(None, max_length=150)
+    model:           str = Field(..., min_length=1, max_length=150)
+    description:     Optional[str] = Field(None, max_length=300)
+    requires_serial: bool = False
+    reorder_level:   Optional[int] = None
+
+
+class StockItemUpdate(BaseModel):
+    """All fields optional — for PATCH (partial update) requests."""
+    category_id:     Optional[int] = None
+    brand:           Optional[str] = Field(None, max_length=150)
+    model:           Optional[str] = Field(None, min_length=1, max_length=150)
+    description:     Optional[str] = Field(None, max_length=300)
+    requires_serial: Optional[bool] = None
+    qty_on_hand:     Optional[int] = None
+    reorder_level:   Optional[int] = None
+    is_active:       Optional[bool] = None
+
+
+class StockItemOut(BaseModel):
+    id:              int
+    category_id:     int
+    category_name:   Optional[str] = None   # joined from stock_categories — same pattern as CustomerOut.route_name
+    brand:           Optional[str] = None
+    model:           str
+    description:     Optional[str] = None
+    requires_serial: bool
+    qty_on_hand:     int
+    reorder_level:   Optional[int] = None
+    is_active:       bool
+    created_at:      Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+# StockReceiptItem — input carries only the user-entered fields;
+# all computed amounts (operation_cost_amount, subtotal_after_opcost, sscl_amount,
+# vat_amount, final_unit_price) are derived server-side at save time.
+
+class StockReceiptItemIn(BaseModel):
+    stock_item_id:        int
+    qty:                  int = Field(1, ge=1)
+    unit_cost:            Decimal = Decimal("0.00")       # supplier charge per unit
+    operation_cost_type:  str = "percentage"              # 'percentage' or 'fixed'
+    operation_cost_value: Decimal = Decimal("0.0000")     # raw number entered
+
+
+class StockReceiptItemOut(BaseModel):
+    id:                     int
+    receipt_id:             int
+    stock_item_id:          int
+    qty:                    int
+
+    # Cost chain — all snapshotted at save time
+    unit_cost:              Decimal
+    operation_cost_type:    str
+    operation_cost_value:   Decimal
+    operation_cost_amount:  Decimal
+    subtotal_after_opcost:  Decimal
+    sscl_pct:               Decimal
+    sscl_amount:            Decimal
+    vat_pct:                Decimal
+    vat_amount:             Decimal
+    final_unit_price:       Decimal
+
+    created_at:             Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class StockReceiptCreate(BaseModel):
+    supplier_id:        int
+    received_date:      date
+    reference_no:       Optional[str] = Field(None, max_length=80)
+    received_by_rep_id: Optional[int] = None
+    notes:              Optional[str] = None
+    items:              List[StockReceiptItemIn] = []
+
+
+class StockReceiptDetail(BaseModel):
+    """Full GRN output — header fields plus all line items."""
+    id:                 int
+    supplier_id:        int
+    supplier_name:      Optional[str] = None   # joined from suppliers
+    received_date:      date
+    reference_no:       Optional[str] = None
+    received_by_rep_id: Optional[int] = None
+    received_by_rep_name: Optional[str] = None  # joined from reps
+    notes:              Optional[str] = None
+    created_at:         Optional[datetime] = None
+    items:              List[StockReceiptItemOut] = []
+    model_config = {"from_attributes": True}
+
+
+class StockUnitOut(BaseModel):
+    """Full unit record — used in stock management detail views."""
+    id:              int
+    receipt_item_id: int
+    stock_item_id:   int
+    brand:           Optional[str] = None   # joined from stock_items
+    model:           Optional[str] = None   # joined from stock_items
+    description:     Optional[str] = None   # joined from stock_items
+    serial_number:   str
+    status:          str
+    sold_invoice_item_id: Optional[int] = None
+    warranty_months: Optional[int] = None
+    created_at:      Optional[datetime] = None
+    updated_at:      Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class StockUnitLookupOut(BaseModel):
+    """Lightweight schema for barcode-scan lookup — enough for the frontend
+    to auto-fill an invoice line without loading the full unit record."""
+    serial_number:   str
+    stock_item_id:   int
+    brand:           Optional[str] = None
+    model:           Optional[str] = None
+    description:     Optional[str] = None
+    final_unit_price: Decimal
+    status:          str
     model_config = {"from_attributes": True}

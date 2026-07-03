@@ -27,7 +27,7 @@ Calculation chain (applied server-side on every create):
   Internal audit fields (base_subtotal, profit_margin_amount, etc.) are always
   stored on the invoice row regardless of category.
 """
-from models import Invoice, Customer, Rep, Route, Payment, InvoiceItem, Settings
+from models import Invoice, Customer, Rep, Route, Payment, InvoiceItem, Settings, StockItem, StockUnit
 from decimal import Decimal, ROUND_HALF_UP
 import re
 import datetime
@@ -264,6 +264,40 @@ def get_next_number(
     return {"invoice_number": next_num}
 
 
+@router.get("/stock-check")
+def stock_availability_check(
+    stock_item_id: int = Query(..., description="Catalog item ID to check"),
+    qty:           int = Query(1,   ge=1, description="Quantity the rep intends to sell"),
+    db: Session = Depends(get_db),
+):
+    """
+    Lightweight per-line availability check — call this as the rep fills
+    each invoice line, not just at final submit.
+
+    Design choice: separate endpoint rather than mutating InvoiceCreate's
+    response shape, because:
+      (a) it is a read-only query with no side effects;
+      (b) it can be called per-line as the user fills the form, before
+          the whole invoice is ready to submit;
+      (c) it doesn't couple form-validation timing to the create POST.
+
+    Returns:
+      { available: bool, qty_on_hand: int, requested: int }
+
+    HTTP 404 if the catalog item doesn't exist.
+    """
+    si = db.query(StockItem).filter(StockItem.id == stock_item_id, StockItem.is_active == True).first()
+    if not si:
+        raise HTTPException(status_code=404, detail=f"Stock item id={stock_item_id} not found")
+
+    return {
+        "stock_item_id": si.id,
+        "qty_on_hand":   si.qty_on_hand,
+        "requested":     qty,
+        "available":     si.qty_on_hand >= qty,
+    }
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[InvoiceListItem])
@@ -371,6 +405,16 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
 
     All financial breakdown values are calculated here and stored on the
     invoice row so historical data never changes even if global rates do.
+
+    Stock management (added):
+      - If a line has serial_no: the matching StockUnit must exist and be
+        'in_stock'. After the invoice is flushed, status is set to 'sold'
+        and qty_on_hand decremented — all in the same transaction.
+      - If a line has stock_item_id but no serial_no (bulk non-serialized
+        item): qty_on_hand is decremented by the line qty.
+      - Lines with neither are free-text items; stock is untouched.
+      ALL stock validation runs as a pre-flight pass before any DB writes
+      so a bad line fails the whole invoice atomically.
     """
     # ── Duplicate check ──────────────────────────────────────────────────────
     existing = db.query(Invoice).filter(
@@ -399,7 +443,93 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Invoice must include at least one line item.")
 
-    # ── Build line items: raw cost → customer-facing rate/amount ────────────
+    # ── PRE-FLIGHT STOCK VALIDATION ──────────────────────────────────────────
+    # ALL checks run before touching the DB so any failure rolls back nothing
+    # (there is nothing to roll back yet) and the whole invoice is rejected.
+    #
+    # We also build a map of the data we'll need during the DB write phase
+    # so we don't query the same rows twice.
+    #
+    # serial_unit_map : serial_no  -> StockUnit  (for serialized lines)
+    # bulk_item_map   : (line_idx) -> StockItem  (for bulk non-serial lines)
+    # line_stock_item_ids: list of stock_item_id per line (None if free-text)
+
+    serial_unit_map:     dict[str, StockUnit]  = {}
+    bulk_item_map:       dict[int, StockItem]  = {}
+    line_stock_item_ids: list[Optional[int]]   = []
+
+    # Track cumulative qty decrements for bulk items within this same invoice
+    # so that selling 3 of the same cable on 3 separate lines still validates
+    # against the single qty_on_hand value.
+    bulk_pending_decrements: dict[int, int] = {}  # stock_item_id -> total qty to deduct
+
+    for i, item_data in enumerate(payload.items, start=1):
+        serial   = (item_data.serial_no or "").strip() or None
+        sii_id   = item_data.stock_item_id
+
+        if serial:
+            # ── Serialized item: look up the StockUnit ───────────────────────
+            unit = (
+                db.query(StockUnit)
+                .filter(StockUnit.serial_number == serial)
+                .first()
+            )
+            if not unit:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Line {i}: serial number '{serial}' not found in inventory",
+                )
+            if unit.status != "in_stock":
+                status_msgs = {
+                    "sold":              f"already sold",
+                    "returned":          "returned and pending inspection",
+                    "warranty_replaced": "replaced under warranty",
+                    "defective":         "marked defective",
+                }
+                reason = status_msgs.get(unit.status, f"status='{unit.status}'")
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Line {i}: serial '{serial}' is not available "
+                        f"({reason}). Cannot sell the same unit twice."
+                    ),
+                )
+            if serial in serial_unit_map:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Line {i}: serial '{serial}' appears more than once in this invoice",
+                )
+            serial_unit_map[serial] = unit
+            line_stock_item_ids.append(unit.stock_item_id)
+
+        elif sii_id:
+            # ── Bulk non-serialized item: check qty_on_hand ──────────────────
+            si = db.query(StockItem).filter(StockItem.id == sii_id).first()
+            if not si:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Line {i}: stock item id={sii_id} not found",
+                )
+            qty_needed = item_data.qty or 1
+            bulk_pending_decrements[sii_id] = bulk_pending_decrements.get(sii_id, 0) + qty_needed
+            # Check cumulative demand against current on-hand
+            if si.qty_on_hand < bulk_pending_decrements[sii_id]:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Line {i}: insufficient stock for item '{si.model}' "
+                        f"(id={sii_id}). On hand: {si.qty_on_hand}, "
+                        f"requested total across all lines: {bulk_pending_decrements[sii_id]}."
+                    ),
+                )
+            bulk_item_map[i] = si
+            line_stock_item_ids.append(sii_id)
+
+        else:
+            # ── Free-text line: no stock tracking ───────────────────────────
+            line_stock_item_ids.append(None)
+
+    # ── Build line items: raw cost -> customer-facing rate/amount ─────────────
     line_results  = []
     item_objects  = []
 
@@ -426,13 +556,14 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
 
         item_objects.append(
             InvoiceItem(
-                line_number = i,
-                description = item_data.description,
-                serial_no   = item_data.serial_no,
-                qty         = qty,
-                raw_rate    = raw_rate,
-                rate        = display_rate,
-                amount      = line["display_amount"],
+                line_number   = i,
+                description   = item_data.description,
+                serial_no     = item_data.serial_no,
+                qty           = qty,
+                raw_rate      = raw_rate,
+                rate          = display_rate,
+                amount        = line["display_amount"],
+                stock_item_id = line_stock_item_ids[i - 1],  # pre-computed above
             )
         )
 
@@ -484,6 +615,37 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
     for item_obj in item_objects:
         item_obj.invoice_id = inv.id
         db.add(item_obj)
+
+    # flush again so every item_obj.id is populated — needed to write
+    # sold_invoice_item_id on the StockUnit rows below.
+    db.flush()
+
+    # ── STOCK UPDATES (same transaction, after flush) ────────────────────────
+    # All validation already passed above; we only update here.
+    # No individual commits — everything is committed atomically at the end.
+
+    for i, (item_data, item_obj) in enumerate(zip(payload.items, item_objects), start=1):
+        serial = (item_data.serial_no or "").strip() or None
+        sii_id = item_data.stock_item_id
+
+        if serial:
+            # Mark the serialized unit as sold
+            unit = serial_unit_map[serial]
+            unit.status               = "sold"
+            unit.sold_invoice_item_id = item_obj.id
+
+            # Decrement qty_on_hand on the catalog item
+            si = db.query(StockItem).filter(StockItem.id == unit.stock_item_id).first()
+            if si:
+                si.qty_on_hand = max(0, (si.qty_on_hand or 0) - 1)
+
+        elif sii_id:
+            # Decrement bulk qty_on_hand
+            si = bulk_item_map[i]
+            qty_sold = item_data.qty or 1
+            si.qty_on_hand = max(0, (si.qty_on_hand or 0) - qty_sold)
+
+        # Free-text lines: nothing to do
 
     try:
         db.commit()

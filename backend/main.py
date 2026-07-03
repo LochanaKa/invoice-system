@@ -21,10 +21,11 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 
 from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes,  backup_router,  preferences, auth_router, jobs
+from routers import suppliers, stock_categories, stock_items, stock_receipts, stock_units
 from database import engine
 from models import Base
 from migrations import run_startup_migrations
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 # ── Auto-create any missing tables on startup ─────────────────────────────────
 # This is non-destructive: existing tables and their data are never touched.
@@ -63,7 +64,8 @@ app.include_router(auth_router.router, prefix="/api")
 # Every other router requires a valid JWT. Adding `dependencies=[...]`
 # here runs get_current_user before ANY route in that router — one line
 # protects the whole file instead of editing every endpoint individually.
-protected = {"dependencies": [Depends(get_current_user)]}
+protected   = {"dependencies": [Depends(get_current_user)]}
+admin_only  = {"dependencies": [Depends(require_admin)]}
 
 app.include_router(invoices.router,   prefix="/api", **protected)
 app.include_router(customers.router,  prefix="/api", **protected)
@@ -77,6 +79,17 @@ app.include_router(routes.router,     prefix="/api", **protected) #  ← Routes 
 app.include_router(preferences.router, prefix="/api", **protected) #  ← Dashboard layout preferences
 app.include_router(backup_router.router, prefix="/api", **protected) #  ← Backup management
 app.include_router(jobs.router, prefix="/api", **protected) #  ← Job cards / repair tickets
+
+# ── Stock management routers ──────────────────────────────────────
+# Admin-only: full catalog + GRN management
+app.include_router(suppliers.router,         prefix="/api", **admin_only) #  ← Supplier CRUD
+app.include_router(stock_categories.router,  prefix="/api", **admin_only) #  ← Stock category CRUD
+app.include_router(stock_items.router,       prefix="/api", **admin_only) #  ← Catalog item CRUD
+app.include_router(stock_receipts.router,    prefix="/api", **admin_only) #  ← GRN create/view
+# Barcode lookup — any logged-in rep (needed during invoice creation)
+app.include_router(stock_units.lookup_router, prefix="/api", **protected)  #  ← /lookup/{serial}
+# Unit listing — admin only (inventory browse page)
+app.include_router(stock_units.router,        prefix="/api", **admin_only) #  ← GET /stock-units
 
 @app.get("/", tags=["Health"])
 def root():

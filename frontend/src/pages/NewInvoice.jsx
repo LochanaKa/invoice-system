@@ -8,14 +8,15 @@
  * VAT:     display amount = raw + margin; SSCL/VAT at invoice level
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate }         from "react-router-dom";
-import { Plus, Trash2, Info }  from "lucide-react";
-import { getLookups, getCustomers, createInvoice, getSettings, getNextInvoiceNumber, createCustomer, createRoute, authFetch } from "../services/api";
+import { Plus, Trash2, Info, Barcode, Search, AlertTriangle, CheckCircle2, Loader2, Package } from "lucide-react";
+import { getLookups, getCustomers, createInvoice, getSettings, getNextInvoiceNumber, createCustomer, createRoute, authFetch, lookupSerial, getStockItems } from "../services/api";
 import { API_BASE } from "../config";
 import { round2, calculateItemRow, calculateInvoiceTotals } from "../utils/invoiceCalc";
 
-const EMPTY_ITEM = { description: "", serial_no: "", qty: 1, rate: "" };
+// stock_item_id + suggested_price track catalog-linked rows for price-drift warning
+const EMPTY_ITEM = { description: "", serial_no: "", qty: 1, rate: "", stock_item_id: null, suggested_price: null };
 
 const fmt = (n) => Number(n || 0).toLocaleString("en-LK", {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -74,6 +75,22 @@ export default function NewInvoice() {
   const [quickAddPhone, setQuickAddPhone] = useState("");
   const [quickAdding,  setQuickAdding]  = useState(false);
   const [quickAddErr,  setQuickAddErr]  = useState(null);
+
+  // ── Serial scan state ────────────────────────────────────────────────────
+  const [serialInput,   setSerialInput]   = useState("");
+  const [serialError,   setSerialError]   = useState(null);   // inline error
+  const [serialSuccess, setSerialSuccess] = useState(null);   // brief green flash
+  const [serialLoading, setSerialLoading] = useState(false);
+  const serialInputRef = useRef(null);
+
+  // ── Non-serialized stock picker state ────────────────────────────────────
+  const [stockSearch,        setStockSearch]        = useState("");
+  const [stockResults,       setStockResults]       = useState([]);
+  const [stockSearchLoading, setStockSearchLoading] = useState(false);
+  const [stockSearchOpen,    setStockSearchOpen]    = useState(false);
+  const [pendingStockItem,   setPendingStockItem]   = useState(null);  // item chosen, awaiting qty
+  const [pendingStockQty,    setPendingStockQty]    = useState("1");
+  const pendingQtyRef = useRef(null);
 
   // ── On mount: load lookups + global settings defaults ────────────────────
   useEffect(() => {
@@ -234,6 +251,107 @@ export default function NewInvoice() {
     setItems((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // ── Serial scan handler ───────────────────────────────────────────────────
+  // Called on Enter in the scan input. Looks up the serial via
+  // GET /stock-units/lookup/{serial}, then appends a new row.
+  async function handleSerialScan(e) {
+    if (e.key !== "Enter") return;
+    const serial = serialInput.trim();
+    if (!serial) return;
+
+    // Duplicate guard — don't add if same serial is already in the list
+    if (items.some((it) => it.serial_no === serial)) {
+      setSerialError(`Serial "${serial}" is already added to this invoice.`);
+      return;
+    }
+
+    setSerialError(null);
+    setSerialSuccess(null);
+    setSerialLoading(true);
+
+    try {
+      const unit = await lookupSerial(serial);
+      // unit shape: { serial_number, status, stock_item_id, brand, model,
+      //               description, final_unit_price, ... }
+
+      const desc = [unit.brand, unit.model].filter(Boolean).join(" ") || unit.description || "";
+
+      setItems((prev) => [
+        ...prev.filter((it) => it.description || it.rate), // drop any trailing empty row first
+        {
+          ...EMPTY_ITEM,
+          description:    desc,
+          serial_no:      unit.serial_number,
+          qty:            1,
+          rate:           String(unit.final_unit_price ?? ""),
+          stock_item_id:  unit.stock_item_id,
+          suggested_price: unit.final_unit_price,
+        },
+      ]);
+
+      setSerialInput("");
+      setSerialSuccess(`✓ Added: ${desc} (${serial})`);
+      setTimeout(() => setSerialSuccess(null), 3000);
+      // Return focus immediately so operator can scan the next item
+      setTimeout(() => serialInputRef.current?.focus(), 50);
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 404) {
+        setSerialError(`Serial "${serial}" not found in stock.`);
+      } else if (status === 409) {
+        setSerialError(`Serial "${serial}" is already sold or not available.`);
+      } else {
+        setSerialError(err.response?.data?.detail || `Lookup failed for "${serial}".`);
+      }
+    } finally {
+      setSerialLoading(false);
+    }
+  }
+
+  // ── Non-serialized stock item search (debounced) ──────────────────────────
+  const handleStockSearch = useCallback(async (q) => {
+    if (!q.trim()) { setStockResults([]); setStockSearchOpen(false); return; }
+    setStockSearchLoading(true);
+    try {
+      const results = await getStockItems({ search: q, show_inactive: false });
+      // Only show non-serialized items in this picker (serialized ones must be scanned)
+      setStockResults(results.filter((it) => !it.requires_serial));
+      setStockSearchOpen(true);
+    } catch { setStockResults([]); }
+    finally   { setStockSearchLoading(false); }
+  }, []);
+
+  function handleSelectStockItem(item) {
+    setPendingStockItem(item);
+    setPendingStockQty("1");
+    setStockSearch(item.brand ? `${item.brand} ${item.model || ""}`.trim() : (item.model || item.description || ""));
+    setStockSearchOpen(false);
+    // Move focus to qty input immediately
+    setTimeout(() => pendingQtyRef.current?.focus(), 50);
+  }
+
+  function commitStockItem() {
+    if (!pendingStockItem) return;
+    const qty = Math.max(1, parseInt(pendingStockQty) || 1);
+    const desc = [pendingStockItem.brand, pendingStockItem.model]
+      .filter(Boolean).join(" ") || pendingStockItem.description || "";
+
+    setItems((prev) => [
+      ...prev.filter((it) => it.description || it.rate),
+      {
+        ...EMPTY_ITEM,
+        description:     desc,
+        qty:             qty,
+        rate:            String(pendingStockItem.final_unit_price ?? ""),
+        stock_item_id:   pendingStockItem.id,
+        suggested_price: pendingStockItem.final_unit_price,
+      },
+    ]);
+    setPendingStockItem(null);
+    setStockSearch("");
+    setPendingStockQty("1");
+  }
+
   // ── Live totals (mirrors backend formula exactly) ─────────────────────────
   const marginPct = (Number(rates.profit_margin_pct) || 0) / 100;
   const ssclPct   = (Number(rates.sscl_pct)          || 0) / 100;
@@ -249,6 +367,17 @@ export default function NewInvoice() {
   } = calculateInvoiceTotals(lineCalcs, category, ssclPct, vatPct);
 
   const isVAT = category === "VAT";
+
+  // ── Price-drift check ────────────────────────────────────────────────────
+  // Returns list of items where rate was manually edited away from the
+  // catalog-suggested price (non-blocking — just warns staff).
+  const priceDriftItems = items.filter((it) => {
+    if (it.suggested_price == null) return false;
+    const suggested = parseFloat(it.suggested_price);
+    const entered   = parseFloat(it.rate);
+    if (isNaN(suggested) || isNaN(entered)) return false;
+    return Math.abs(suggested - entered) > 0.01;
+  });
 
   // ── Form submit ──────────────────────────────────────────────────────────
   async function handleSubmit(e) {
@@ -295,10 +424,11 @@ export default function NewInvoice() {
         vat_pct:           vatPct,
 
         items: validItems.map((it) => ({
-          description: it.description,
-          serial_no:   it.serial_no || null,
-          qty:         parseInt(it.qty)   || 1,
-          rate:        parseFloat(it.rate) || 0,
+          description:   it.description,
+          serial_no:     it.serial_no     || null,
+          stock_item_id: it.stock_item_id || null,
+          qty:           parseInt(it.qty)   || 1,
+          rate:          parseFloat(it.rate) || 0,
         })),
         route_id: form.route_id ? parseInt(form.route_id) : null,
       };
@@ -643,17 +773,163 @@ export default function NewInvoice() {
 
         {/* ── Section 4: Line items ───────────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-700">Line Items</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Enter raw cost — margin{isVAT ? "" : ", SSCL, and VAT"} are rolled into the customer-facing amount
-              </p>
+
+          {/* ── Stock item entry panel ─────────────────────────── */}
+          <div className="px-5 pt-5 pb-4 border-b border-gray-100 space-y-4">
+            <h2 className="text-sm font-semibold text-gray-700">Line Items</h2>
+
+            {/* Serialized scan row */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
+                <Barcode size={13} className="text-blue-500" />
+                Scan / Enter Serial Number
+                <span className="text-gray-300 font-normal">(for serialised items — press Enter or scan barcode)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    ref={serialInputRef}
+                    type="text"
+                    value={serialInput}
+                    onChange={(e) => { setSerialInput(e.target.value); setSerialError(null); }}
+                    onKeyDown={handleSerialScan}
+                    placeholder="Scan barcode or type serial number, then press Enter…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={`w-full border rounded-lg px-4 py-2.5 text-sm font-mono
+                                focus:outline-none focus:ring-2 transition-colors
+                                ${serialError
+                                  ? "border-red-300 bg-red-50 focus:ring-red-300"
+                                  : serialSuccess
+                                    ? "border-green-300 bg-green-50 focus:ring-green-300"
+                                    : "border-blue-200 bg-blue-50/40 focus:ring-blue-400"}`}
+                  />
+                  {serialLoading && (
+                    <Loader2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-blue-400" />
+                  )}
+                </div>
+              </div>
+
+              {/* Inline feedback messages */}
+              {serialError && (
+                <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertTriangle size={12} />
+                  {serialError}
+                  <button type="button" onClick={() => { setSerialError(null); setSerialInput(""); serialInputRef.current?.focus(); }}
+                          className="ml-auto text-red-400 hover:text-red-600 font-medium">
+                    Clear
+                  </button>
+                </div>
+              )}
+              {serialSuccess && !serialError && (
+                <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <CheckCircle2 size={12} /> {serialSuccess}
+                </div>
+              )}
             </div>
+
+            {/* Non-serialized stock picker */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
+                <Package size={13} className="text-gray-400" />
+                Add Non-Serialized Item from Catalog
+                <span className="text-gray-300 font-normal">(toner, cables, accessories…)</span>
+              </label>
+              <div className="flex items-end gap-2">
+                {/* Search box */}
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={stockSearch}
+                    onChange={(e) => {
+                      const q = e.target.value;
+                      setStockSearch(q);
+                      setPendingStockItem(null);
+                      handleStockSearch(q);
+                    }}
+                    onFocus={() => { if (stockResults.length) setStockSearchOpen(true); }}
+                    onBlur={() => setTimeout(() => setStockSearchOpen(false), 200)}
+                    placeholder="Search catalog by brand / model…"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                  />
+                  {stockSearchLoading && (
+                    <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400" />
+                  )}
+                  {stockSearchOpen && stockResults.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1 top-full max-h-52 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg z-50">
+                      {stockResults.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onMouseDown={() => handleSelectStockItem(item)}
+                          className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-gray-700
+                                     transition-colors flex justify-between items-center border-b border-gray-50 last:border-b-0"
+                        >
+                          <span className="text-sm font-medium">
+                            {[item.brand, item.model].filter(Boolean).join(" ") || item.description}
+                          </span>
+                          <span className="text-xs text-gray-400 ml-3">
+                            Rs. {Number(item.final_unit_price || 0).toLocaleString("en-LK", { minimumFractionDigits: 2 })}
+                            {item.qty_on_hand != null && (
+                              <span className={item.qty_on_hand > 0 ? "text-green-600 ml-2" : "text-red-500 ml-2"}>
+                                ({item.qty_on_hand} in stock)
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {stockSearchOpen && stockResults.length === 0 && !stockSearchLoading && stockSearch.trim() && (
+                    <div className="absolute left-0 right-0 mt-1 top-full bg-white border border-gray-200 rounded-xl shadow-lg z-50 px-4 py-3 text-sm text-gray-400 italic">
+                      No non-serialized items match "{stockSearch}"
+                    </div>
+                  )}
+                </div>
+
+                {/* Qty + Add button — visible only when an item is selected */}
+                {pendingStockItem && (
+                  <>
+                    <input
+                      ref={pendingQtyRef}
+                      type="number" min="1" step="1"
+                      value={pendingStockQty}
+                      onChange={(e) => setPendingStockQty(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && commitStockItem()}
+                      className="w-20 border border-gray-200 rounded-lg px-3 py-2 text-sm text-center
+                                 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                      placeholder="Qty"
+                    />
+                    <button
+                      type="button"
+                      onClick={commitStockItem}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700
+                                 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      <Plus size={14} /> Add
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Manual free-text reminder */}
+            <p className="text-xs text-gray-400 flex items-center gap-1">
+              <Info size={11} />
+              You can also add free-text line items (e.g. repair labour) directly in the table below — those won't be linked to stock.
+            </p>
+          </div>
+
+          {/* ── Table header + Add button ───────────────────────────────── */}
+          <div className="px-5 py-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+            <p className="text-xs text-gray-400">
+              Enter raw cost — margin{isVAT ? "" : ", SSCL, and VAT"} are rolled into the customer-facing amount.
+            </p>
             <button type="button" onClick={addItem}
                     className="flex items-center gap-1.5 text-xs text-blue-600
                                hover:text-blue-700 font-medium">
-              <Plus size={14} /> Add item
+              <Plus size={14} /> Add free-text row
             </button>
           </div>
 
@@ -712,9 +988,16 @@ export default function NewInvoice() {
                           type="number" min="0" step="0.01" value={item.rate}
                           onChange={(e) => updateItem(i, "rate", e.target.value)}
                           placeholder="0.00"
-                          className="w-full border-0 border-b border-gray-200 py-1 text-sm
-                                     focus:outline-none focus:border-blue-500 bg-transparent text-right"
+                          className={`w-full border-0 py-1 text-sm focus:outline-none bg-transparent text-right
+                            ${item.suggested_price != null && Math.abs(parseFloat(item.suggested_price) - parseFloat(item.rate || 0)) > 0.01
+                              ? "border-b border-amber-400 text-amber-700"
+                              : "border-b border-gray-200 focus:border-blue-500"}`}
                         />
+                        {item.suggested_price != null && Math.abs(parseFloat(item.suggested_price) - parseFloat(item.rate || 0)) > 0.01 && (
+                          <p className="text-[10px] text-amber-500 text-right mt-0.5">
+                            suggested: Rs. {fmt(item.suggested_price)}
+                          </p>
+                        )}
                         {rawAmt > 0 && (
                           <p className="text-[10px] text-gray-300 text-right mt-0.5">
                             raw: Rs. {fmt(rawAmt)}
@@ -814,6 +1097,27 @@ export default function NewInvoice() {
                     placeholder="Internal notes..."
                     className={`${inp} resize-none`} />
         </div>
+
+        {/* ── Price-drift warning (non-blocking) ─────────────── */}
+        {priceDriftItems.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2">
+            <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">Price override detected</p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                {priceDriftItems.length} line item{priceDriftItems.length > 1 ? "s have" : " has"} a rate different from
+                the catalog price. Please confirm this is intentional before submitting.
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {priceDriftItems.map((it, idx) => (
+                  <li key={idx} className="text-xs text-amber-700">
+                    • {it.description || "(unnamed)"} — entered Rs. {fmt(it.rate)}, suggested Rs. {fmt(it.suggested_price)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
 
         {/* ── Actions ─────────────────────────────────────────── */}
         <div className="flex gap-3">

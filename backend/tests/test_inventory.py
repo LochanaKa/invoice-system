@@ -1,129 +1,57 @@
 import sys
 from pathlib import Path
 from decimal import Decimal
-from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from routers.inventory import calculate_final_price
-from schemas import GRNItemCreate, GRNCreate
+from routers.stock_receipts import calculate_receipt_line
 
 
-def test_calculate_final_price_standard():
+def test_calculate_receipt_line_percentage():
     """
-    Test Sri Lankan tax math formula with explicitly injected rates:
-    1. Base Value = 1000 + 200 = 1200
-    2. Profit Value = 1200 * 0.20 (20%) = 240
-    3. Value After Margin = 1200 + 240 = 1440
-    4. SSCL (2.5%) = 1440 * 0.025 = 36
-    5. VAT (18%) = (1440 + 36) * 0.18 = 1476 * 0.18 = 265.68
-    6. Final Price = 1440 + 36 + 265.68 = 1741.68
+    Test standard math:
+    1. unit_cost = 1000
+    2. operation_cost_amount = 1000 * 0.05 = 50.00
+       subtotal_after_opcost = 1000 + 50 = 1050
+    3. sscl_amount = 1050 * 0.025 = 26.25
+       after_sscl = 1050 + 26.25 = 1076.25
+    4. vat_amount = 1076.25 * 0.18 = 193.725 -> 193.73 (rounded)
+       final_unit_price = 1076.25 + 193.73 = 1269.98
     """
-    result = calculate_final_price(
-        purchase_cost=Decimal("1000.00"),
-        operation_cost=Decimal("200.00"),
-        profit_margin_pct=Decimal("20.00"),
-        is_custom_override=False,
-        custom_price=None,
-        sscl_rate=Decimal("0.025"),
-        vat_rate=Decimal("0.18"),
+    result = calculate_receipt_line(
+        unit_cost=Decimal("1000.00"),
+        operation_cost_type="percentage",
+        operation_cost_value=Decimal("5.0000"),
+        sscl_pct=Decimal("0.025"),
+        vat_pct=Decimal("0.18"),
     )
-    assert result["final_selling_price"] == Decimal("1741.68")
-    assert result["sscl_amount"] == Decimal("36.00")
-    assert result["vat_amount"] == Decimal("265.68")
-    assert result["profit_margin_value"] == Decimal("240.00")
+    assert result["operation_cost_amount"] == Decimal("50.00")
+    assert result["subtotal_after_opcost"] == Decimal("1050.00")
+    assert result["sscl_amount"] == Decimal("26.25")
+    assert result["vat_amount"] == Decimal("193.73")
+    assert result["final_unit_price"] == Decimal("1269.98")
 
 
-def test_calculate_final_price_custom_override():
+def test_calculate_receipt_line_fixed():
     """
-    Test that when is_custom_override is True, it returns custom_price with zero breakdown.
+    Test standard math with fixed operation cost:
+    1. unit_cost = 1000
+    2. operation_cost_amount = 150
+       subtotal_after_opcost = 1000 + 150 = 1150
+    3. sscl_amount = 1150 * 0.025 = 28.75
+       after_sscl = 1150 + 28.75 = 1178.75
+    4. vat_amount = 1178.75 * 0.18 = 212.175 -> 212.18 (rounded)
+       final_unit_price = 1178.75 + 212.18 = 1390.93
     """
-    result = calculate_final_price(
-        purchase_cost=Decimal("1000.00"),
-        operation_cost=Decimal("200.00"),
-        profit_margin_pct=Decimal("20.00"),
-        is_custom_override=True,
-        custom_price=Decimal("1500.00"),
-        sscl_rate=Decimal("0.025"),
-        vat_rate=Decimal("0.18"),
+    result = calculate_receipt_line(
+        unit_cost=Decimal("1000.00"),
+        operation_cost_type="fixed",
+        operation_cost_value=Decimal("150.00"),
+        sscl_pct=Decimal("0.025"),
+        vat_pct=Decimal("0.18"),
     )
-    assert result["final_selling_price"] == Decimal("1500.00")
-    assert result["profit_margin_value"] == Decimal("0.00")
-    assert result["sscl_amount"] == Decimal("0.00")
-    assert result["vat_amount"] == Decimal("0.00")
-
-
-def test_calculate_final_price_different_rates():
-    """
-    Verify the function correctly applies injected rates, not hardcoded values.
-    If sscl_rate=0.030 (3%) and vat_rate=0.20 (20%):
-      Base = 0 + 1000 = 1000, Profit = 0, After Margin = 1000
-      SSCL = 1000 * 0.03 = 30
-      VAT  = (1000 + 30) * 0.20 = 206
-      Final = 1000 + 30 + 206 = 1236
-    """
-    result = calculate_final_price(
-        purchase_cost=Decimal("1000.00"),
-        operation_cost=Decimal("0.00"),
-        profit_margin_pct=Decimal("0.00"),
-        is_custom_override=False,
-        custom_price=None,
-        sscl_rate=Decimal("0.030"),
-        vat_rate=Decimal("0.20"),
-    )
-    assert result["final_selling_price"] == Decimal("1236.00")
-    assert result["sscl_amount"] == Decimal("30.00")
-    assert result["vat_amount"] == Decimal("206.00")
-
-
-def test_grn_item_create_validation_success():
-    """
-    Test schema validation with correct types.
-    """
-    item = GRNItemCreate(
-        product_id=1,
-        purchase_cost=Decimal("5000.00"),
-        ops_cost=Decimal("250.00"),
-        margin=Decimal("15.0"),
-        is_custom_override=False,
-        serial_numbers=["SN-001", "SN-002"]
-    )
-    assert item.product_id == 1
-    assert item.purchase_cost == Decimal("5000.00")
-    assert item.ops_cost == Decimal("250.00")
-    assert item.margin == Decimal("15.0")
-    assert not item.is_custom_override
-    assert item.serial_numbers == ["SN-001", "SN-002"]
-
-
-def test_grn_item_create_validation_negative_values():
-    """
-    Test schema validation fails for negative financial values.
-    """
-    try:
-        GRNItemCreate(
-            product_id=1,
-            purchase_cost=Decimal("-10.00"),
-            ops_cost=Decimal("0.00"),
-            margin=Decimal("15.0"),
-        )
-    except ValidationError:
-        pass
-    else:
-        raise AssertionError("Validation should have failed for negative purchase_cost")
-
-
-def test_grn_create_validation_min_items():
-    """
-    Test schema validation fails when received_items list is empty.
-    """
-    try:
-        GRNCreate(
-            supplier_id=1,
-            grn_number="GRN-1001",
-            received_items=[]
-        )
-    except ValidationError:
-        pass
-    else:
-        raise AssertionError("Validation should have failed for empty received_items list")
+    assert result["operation_cost_amount"] == Decimal("150.00")
+    assert result["subtotal_after_opcost"] == Decimal("1150.00")
+    assert result["sscl_amount"] == Decimal("28.75")
+    assert result["vat_amount"] == Decimal("212.18")
+    assert result["final_unit_price"] == Decimal("1390.93")

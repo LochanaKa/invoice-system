@@ -10,19 +10,23 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FileText, PlusCircle,
-  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, HardDrive, LogOut, KeyRound, ClipboardList
+  Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, HardDrive, LogOut, KeyRound, ClipboardList,
+  Truck, Package
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
-  { to: "/dashboard",    icon: LayoutDashboard, label: "Dashboard"        },
-  { to: "/invoices",     icon: FileText,        label: "Invoices"         },
-  { to: "/invoices/new", icon: PlusCircle,      label: "New Invoice"      },
-  { to: "/customers",    icon: Users,           label: "Customers"        },
-  { to: "/staff",        icon: UserCog,         label: "Staff Management" },
-  { to: "/credit",       icon: AlertCircle,     label: "Credit Aging"     },
-  { to: "/reports",      icon: FileText,        label: "Reports"          },
-  { to: "/job-cards", icon: ClipboardList, label: "Job Cards" },
+  { to: "/dashboard",          icon: LayoutDashboard, label: "Dashboard"        },
+  { to: "/invoices",           icon: FileText,        label: "Invoices"         },
+  { to: "/invoices/new",       icon: PlusCircle,      label: "New Invoice"      },
+  { to: "/customers",          icon: Users,           label: "Customers"        },
+  { to: "/staff",              icon: UserCog,         label: "Staff Management", adminOnly: true },
+  { to: "/suppliers",          icon: Truck,           label: "Suppliers",        adminOnly: true },
+  { to: "/stock-items",        icon: Package,         label: "Stock Catalog",    adminOnly: true },
+  { to: "/stock-receipts/new", icon: PlusCircle,      label: "New Receipt",      adminOnly: true },
+  { to: "/credit",             icon: AlertCircle,     label: "Credit Aging"     },
+  { to: "/reports",            icon: FileText,        label: "Reports"          },
+  { to: "/job-cards",          icon: ClipboardList,   label: "Job Cards"        },
 ];
 
 /** SVG replica of the Creative Computers "C" mark */
@@ -101,63 +105,69 @@ export default function Layout() {
 
         {/* Main nav links */}
         <nav className="flex-1 px-3 space-y-0.5">
-          {navItems.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === "/dashboard"}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
-                 transition-all duration-150 group
-                 ${isActive
-                   ? "text-white shadow-lg"
-                   : "text-blue-200 hover:text-white hover:bg-white/10"}`
-              }
-              style={({ isActive }) => isActive ? {
-                background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
-              } : {}}
-            >
-              <Icon size={16} className="flex-shrink-0" />
-              {label}
-            </NavLink>
-          ))}
+          {navItems
+            .filter((item) => !item.adminOnly || user?.is_admin)
+            .map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/dashboard"}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
+                   transition-all duration-150 group
+                   ${isActive
+                     ? "text-white shadow-lg"
+                     : "text-blue-200 hover:text-white hover:bg-white/10"}`
+                }
+                style={({ isActive }) => isActive ? {
+                  background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
+                } : {}}
+              >
+                <Icon size={16} className="flex-shrink-0" />
+                {label}
+              </NavLink>
+            ))}
         </nav>
 
         {/* Settings and backup links */}
         <div className="px-3 pb-3 border-t border-white/10 pt-3 space-y-2">
-          <NavLink
-            to="/backup"
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
-               transition-all duration-150
-               ${isActive
-                 ? "text-white shadow-lg"
-                 : "text-blue-300 hover:text-white hover:bg-white/10"}`
-            }
-            style={({ isActive }) => isActive ? {
-              background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
-            } : {}}
-          >
-            <HardDrive size={16} className="flex-shrink-0" />
-            Backups
-          </NavLink>
+          {user?.is_admin && (
+            <>
+              <NavLink
+                to="/backup"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
+                   transition-all duration-150
+                   ${isActive
+                     ? "text-white shadow-lg"
+                     : "text-blue-300 hover:text-white hover:bg-white/10"}`
+                }
+                style={({ isActive }) => isActive ? {
+                  background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
+                } : {}}
+              >
+                <HardDrive size={16} className="flex-shrink-0" />
+                Backups
+              </NavLink>
 
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
-               transition-all duration-150
-               ${isActive
-                 ? "text-white shadow-lg"
-                 : "text-blue-300 hover:text-white hover:bg-white/10"}`
-            }
-            style={({ isActive }) => isActive ? {
-              background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
-            } : {}}
-          >
-            <Settings2 size={16} className="flex-shrink-0" />
-            Settings
-          </NavLink>
+              <NavLink
+                to="/settings"
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
+                   transition-all duration-150
+                   ${isActive
+                     ? "text-white shadow-lg"
+                     : "text-blue-300 hover:text-white hover:bg-white/10"}`
+                }
+                style={({ isActive }) => isActive ? {
+                  background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
+                } : {}}
+              >
+                <Settings2 size={16} className="flex-shrink-0" />
+                Settings
+              </NavLink>
+            </>
+          )}
         </div>
 
         {/* Footer */}
