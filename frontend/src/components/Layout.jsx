@@ -26,9 +26,11 @@ const navGroups = [
   { key: "technical", label: "Technical", icon: Wrench, children: [
       { to: "/invoices/new-repair", label: "New Repair Invoice" },
       { to: "/job-cards", label: "Job Cards" },
+      { to: "/technicians", label: "Technicians" },
     ]},
   { key: "inventory", label: "Inventory", icon: Package, children: [
       { to: "/stock-items", label: "Stock Catalog", adminOnly: true },
+      { to: "/serial-history", label: "Serial History" },
       { to: "/stock-receipts/new", label: "New Receipt", adminOnly: true },
       { to: "/suppliers", label: "Suppliers", adminOnly: true },
     ]},

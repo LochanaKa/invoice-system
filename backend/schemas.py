@@ -177,6 +177,8 @@ class InvoiceItemIn(BaseModel):
     qty:           int = 1
     rate:          Decimal = Decimal("0.00")   # raw cost per unit (staff-entered)
     stock_item_id: Optional[int] = None        # links this line to the stock catalog
+    pricing_override: Optional[bool] = False
+
 
 class InvoiceItemOut(BaseModel):
     id:            int
@@ -229,6 +231,9 @@ class JobCardCreate(BaseModel):
     priority: Optional[str] = Field(default="NORMAL", max_length=20)
     due_date: Optional[date] = None
     serial_number: Optional[str] = Field(default=None, max_length=100)
+    stock_unit_id: Optional[int] = None
+    job_type: Optional[str] = None
+    device_source: Optional[str] = None
     paper_grn_reference: Optional[str] = None
     intake_method: str = Field(default="WALK_IN", max_length=20)
     linked_sales_invoice_id: Optional[int] = None
@@ -255,12 +260,17 @@ class JobCardResponse(BaseModel):
     priority: Optional[str] = "NORMAL"
     due_date: Optional[date] = None
     serial_number: Optional[str] = None
+    stock_unit_id: Optional[int] = None
+    job_type: Optional[str] = None
+    device_source: Optional[str] = None
     paper_grn_reference: Optional[str] = None
     intake_method: str
     status: str = "NEW"
     notes: Optional[str] = None
     linked_sales_invoice_id: Optional[int] = None
     linked_sales_invoice_number: Optional[str] = None
+    latest_repair_job_amount_charged_by_technician: Optional[Decimal] = None
+    latest_repair_job_outcome: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -275,7 +285,18 @@ class JobCardUpdate(BaseModel):
     priority: Optional[str] = None
     due_date: Optional[date] = None
     serial_number: Optional[str] = None
+    stock_unit_id: Optional[int] = None
+    job_type: Optional[str] = None
+    device_source: Optional[str] = None
     linked_sales_invoice_id: Optional[int] = None
+
+
+class JobActionIn(BaseModel):
+    action: str = Field(..., min_length=1)
+    technician_id: Optional[int] = None
+    date_sent: Optional[date] = None
+    amount_charged_by_technician: Optional[Decimal] = None
+    outcome: Optional[str] = None
 
 
 class InvoiceListItem(BaseModel):
@@ -524,6 +545,48 @@ class RepPortfolioInvoicePage(BaseModel):
     offset: int
 
 
+class RepairJobHistoryOut(BaseModel):
+    id:                     int
+    stock_unit_id:          Optional[int] = None
+    stock_unit_serial_number: Optional[str] = None
+    date_sent:              date
+    date_returned:          Optional[date] = None
+    amount_charged_by_technician: Optional[Decimal] = None
+    outcome:                str
+    linked_job_card_id:     Optional[int] = None
+    created_at:             Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TechnicianCreate(BaseModel):
+    name:          str = Field(..., min_length=1, max_length=200)
+    contact_phone: str = Field(..., min_length=1, max_length=30)
+    contact_email: Optional[str] = Field(None, max_length=100)
+    specialty:     Optional[str] = Field(None, max_length=200)
+    is_active:     Optional[bool] = True
+
+
+class TechnicianUpdate(BaseModel):
+    name:          Optional[str] = Field(None, min_length=1, max_length=200)
+    contact_phone: Optional[str] = Field(None, max_length=30)
+    contact_email: Optional[str] = Field(None, max_length=100)
+    specialty:     Optional[str] = Field(None, max_length=200)
+    is_active:     Optional[bool] = None
+
+
+class TechnicianOut(BaseModel):
+    id:            int
+    name:          str
+    contact_phone: str
+    contact_email: Optional[str] = None
+    specialty:     Optional[str] = None
+    is_active:     bool = True
+    created_at:    Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
 class TopCustomerInvoiceOut(BaseModel):
     id:             int
     invoice_number: str
@@ -681,30 +744,97 @@ class StockReceiptDetail(BaseModel):
 
 class StockUnitOut(BaseModel):
     """Full unit record — used in stock management detail views."""
-    id:              int
-    receipt_item_id: int
-    stock_item_id:   int
-    brand:           Optional[str] = None   # joined from stock_items
-    model:           Optional[str] = None   # joined from stock_items
-    description:     Optional[str] = None   # joined from stock_items
-    serial_number:   str
-    status:          str
-    sold_invoice_item_id: Optional[int] = None
-    warranty_months: Optional[int] = None
-    created_at:      Optional[datetime] = None
-    updated_at:      Optional[datetime] = None
+    id:                        int
+    receipt_item_id:           int
+    stock_item_id:             int
+    brand:                     Optional[str] = None   # joined from stock_items
+    model:                     Optional[str] = None   # joined from stock_items
+    description:               Optional[str] = None   # joined from stock_items
+    serial_number:             str
+    status:                    str
+    sold_invoice_item_id:      Optional[int] = None
+    warranty_months:           Optional[int] = None
+    has_manufacturer_warranty: bool
+    manufacturer_warranty_months: Optional[int] = None
+    created_at:                Optional[datetime] = None
+    updated_at:                Optional[datetime] = None
     model_config = {"from_attributes": True}
 
 
 class StockUnitLookupOut(BaseModel):
     """Lightweight schema for barcode-scan lookup — enough for the frontend
     to auto-fill an invoice line without loading the full unit record."""
-    serial_number:   str
-    stock_item_id:   int
-    brand:           Optional[str] = None
-    model:           Optional[str] = None
-    description:     Optional[str] = None
+    id:             int
+    serial_number:  str
+    stock_item_id:  int
+    brand:          Optional[str] = None
+    model:          Optional[str] = None
+    description:    Optional[str] = None
     final_unit_price: Decimal
-    status:          str
-    latest_price:    Optional[StockReceiptItemOut] = None
+    status:         str
+    latest_price:   Optional[StockReceiptItemOut] = None
+    sold_invoice_item_id: Optional[int] = None
+    sold_invoice_id: Optional[int] = None
+    sold_invoice_number: Optional[str] = None
+    sold_invoice_date: Optional[date] = None
+    warranty_months: Optional[int] = None
+    has_manufacturer_warranty: bool
+    manufacturer_warranty_months: Optional[int] = None
+    model_config = {"from_attributes": True}
+
+
+class SerialHistoryOriginOut(BaseModel):
+    source: str
+    receipt_date: Optional[date] = None
+    grn_reference: Optional[str] = None
+    supplier_name: Optional[str] = None
+    job_card_created_at: Optional[datetime] = None
+    no_stock_history: bool = False
+
+
+class SerialHistorySaleInfoOut(BaseModel):
+    sold: bool = False
+    invoice_number: Optional[str] = None
+    customer_name: Optional[str] = None
+    sale_date: Optional[date] = None
+
+
+class SerialHistoryWarrantyOut(BaseModel):
+    warranty_months: Optional[int] = None
+    has_manufacturer_warranty: bool = False
+    manufacturer_warranty_months: Optional[int] = None
+    sale_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    within_warranty: Optional[bool] = None
+    note: Optional[str] = None
+
+
+class SerialHistoryEventOut(BaseModel):
+    id: int
+    type: str
+    date: datetime
+    title: str
+    subtitle: Optional[str] = None
+    detail: Optional[str] = None
+    note: Optional[str] = None
+    changed_by: Optional[str] = None
+    technician_name: Optional[str] = None
+    amount_charged_by_technician: Optional[Decimal] = None
+    outcome: Optional[str] = None
+    job_card_id: Optional[int] = None
+    stock_unit_id: Optional[int] = None
+
+
+class SerialHistoryOut(BaseModel):
+    serial_number: str
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    description: Optional[str] = None
+    device_name: Optional[str] = None
+    origin: SerialHistoryOriginOut
+    sale_info: SerialHistorySaleInfoOut
+    warranty: SerialHistoryWarrantyOut
+    current_status: Optional[str] = None
+    current_status_label: str
+    timeline: List[SerialHistoryEventOut] = []
     model_config = {"from_attributes": True}

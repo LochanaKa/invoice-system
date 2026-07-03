@@ -218,11 +218,22 @@ def run_startup_migrations(engine: Engine) -> None:
             "CREATE TABLE IF NOT EXISTS job_cards ("
             "id SERIAL PRIMARY KEY, "
             "customer_name VARCHAR(200) NOT NULL, "
+            "customer_phone VARCHAR(30), "
             "device_name VARCHAR(200) NOT NULL, "
             "issue_description TEXT NOT NULL, "
             "received_by_staff_id INTEGER REFERENCES reps(id), "
+            "assigned_to_staff_id INTEGER REFERENCES reps(id), "
+            "serial_number VARCHAR(100), "
+            "stock_unit_id BIGINT REFERENCES stock_units(id), "
+            "job_type VARCHAR(20), "
+            "device_source VARCHAR(20), "
             "paper_grn_reference VARCHAR(100), "
             "intake_method VARCHAR(20) NOT NULL DEFAULT 'WALK_IN', "
+            "status VARCHAR(20) NOT NULL DEFAULT 'NEW', "
+            "notes TEXT, "
+            "priority VARCHAR(20) NOT NULL DEFAULT 'NORMAL', "
+            "due_date DATE, "
+            "linked_sales_invoice_id BIGINT REFERENCES invoices(id), "
             "created_at TIMESTAMP DEFAULT NOW(), "
             "updated_at TIMESTAMP DEFAULT NOW()"
             ")"
@@ -265,6 +276,15 @@ def run_startup_migrations(engine: Engine) -> None:
         ))
         conn.execute(text(
             "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS serial_number VARCHAR(100)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS stock_unit_id BIGINT REFERENCES stock_units(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS job_type VARCHAR(20)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS device_source VARCHAR(20)"
         ))
         conn.execute(text(
             "ALTER TABLE job_cards ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"
@@ -376,11 +396,64 @@ def run_startup_migrations(engine: Engine) -> None:
             "receipt_item_id BIGINT NOT NULL REFERENCES stock_receipt_items(id), "
             "stock_item_id INTEGER NOT NULL REFERENCES stock_items(id), "
             "serial_number VARCHAR(200) NOT NULL UNIQUE, "
-            "status VARCHAR(20) NOT NULL DEFAULT 'in_stock', "
+            "status VARCHAR(30) NOT NULL DEFAULT 'in_stock', "
             "sold_invoice_item_id BIGINT REFERENCES invoice_items(id), "
             "warranty_months INTEGER, "
+            "has_manufacturer_warranty BOOLEAN NOT NULL DEFAULT FALSE, "
+            "manufacturer_warranty_months INTEGER, "
             "created_at TIMESTAMP DEFAULT NOW(), "
             "updated_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+        # Back-fill warranty-related columns for older DBs that may lack them
+        conn.execute(text(
+            "ALTER TABLE stock_units ADD COLUMN IF NOT EXISTS warranty_months INTEGER"
+        ))
+        conn.execute(text(
+            "ALTER TABLE stock_units ADD COLUMN IF NOT EXISTS has_manufacturer_warranty BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        conn.execute(text(
+            "ALTER TABLE stock_units ADD COLUMN IF NOT EXISTS manufacturer_warranty_months INTEGER"
+        ))
+        conn.execute(text(
+            "ALTER TABLE stock_units ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"
+        ))
+        conn.execute(text(
+            "ALTER TABLE stock_units ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()"
+        ))
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS stock_unit_status_history ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "stock_unit_id BIGINT NOT NULL REFERENCES stock_units(id), "
+            "old_status VARCHAR(30) NOT NULL, "
+            "new_status VARCHAR(30) NOT NULL, "
+            "changed_at TIMESTAMP DEFAULT NOW(), "
+            "note TEXT, "
+            "changed_by_rep_id INTEGER REFERENCES reps(id)"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS technicians ("
+            "id SERIAL PRIMARY KEY, "
+            "name VARCHAR(200) NOT NULL, "
+            "contact_phone VARCHAR(30) NOT NULL, "
+            "contact_email VARCHAR(100), "
+            "specialty TEXT, "
+            "is_active BOOLEAN DEFAULT TRUE, "
+            "created_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS repair_jobs ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "stock_unit_id BIGINT NOT NULL REFERENCES stock_units(id), "
+            "technician_id INTEGER NOT NULL REFERENCES technicians(id), "
+            "date_sent DATE NOT NULL, "
+            "date_returned DATE, "
+            "amount_charged_by_technician NUMERIC(12, 2), "
+            "outcome VARCHAR(20) NOT NULL DEFAULT 'pending', "
+            "linked_job_card_id INTEGER REFERENCES job_cards(id), "
+            "created_at TIMESTAMP DEFAULT NOW()"
             ")"
         ))
         conn.execute(text(

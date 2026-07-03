@@ -18,7 +18,7 @@ from sqlalchemy import (
     Date, DateTime, Numeric, Text, ForeignKey, func
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Session
 from database import Base
 
 
@@ -241,22 +241,86 @@ class StockUnit(Base):
     One row per physical, individually-trackable unit.
     Only created when the parent StockItem has requires_serial=True.
 
-    status values: 'in_stock' | 'sold' | 'returned' | 'warranty_replaced' | 'defective'
+    status values: 'in_stock' | 'sold' | 'returned' | 'returned_pending_check' | 'with_manufacturer' | 'with_internal_team_warranty' | 'with_internal_team_paid' | 'with_third_party_warranty' | 'with_third_party_paid' | 'repaired_awaiting_pickup' | 'warranty_replaced' | 'returned_unrepaired' | 'defective' | 'scrapped'
     """
     __tablename__ = "stock_units"
 
     id                  = Column(BigInteger,    primary_key=True)
     receipt_item_id     = Column(BigInteger,    ForeignKey("stock_receipt_items.id"), nullable=False)
     stock_item_id       = Column(Integer,       ForeignKey("stock_items.id"),         nullable=False)
-    serial_number       = Column(String(200),   nullable=False, unique=True, index=True)
-    status              = Column(String(20),    nullable=False, default="in_stock")
-    sold_invoice_item_id = Column(BigInteger,   ForeignKey("invoice_items.id"),       nullable=True)
-    warranty_months     = Column(Integer,       nullable=True)
-    created_at          = Column(DateTime,      server_default=func.now())
-    updated_at          = Column(DateTime,      server_default=func.now(), onupdate=func.now())
+    serial_number              = Column(String(200),   nullable=False, unique=True, index=True)
+    status                     = Column(String(30),    nullable=False, default="in_stock")
+    sold_invoice_item_id       = Column(BigInteger,   ForeignKey("invoice_items.id"),       nullable=True)
+    warranty_months            = Column(Integer,       nullable=True)
+    has_manufacturer_warranty  = Column(Boolean,       nullable=False, default=False)
+    manufacturer_warranty_months = Column(Integer,     nullable=True)
+    created_at                 = Column(DateTime,      server_default=func.now())
+    updated_at                 = Column(DateTime,      server_default=func.now(), onupdate=func.now())
 
     receipt_item = relationship("StockReceiptItem")
     stock_item   = relationship("StockItem")
+    status_history = relationship("StockUnitStatusHistory", back_populates="stock_unit", cascade="all, delete-orphan")
+
+    def record_status_change(self, db: Session, new_status: str, note: str | None = None, changed_by_rep_id: int | None = None):
+        """Log a status transition and update this unit's current status."""
+        old_status = self.status
+        if new_status == old_status:
+            return None
+        self.status = new_status
+        history = StockUnitStatusHistory(
+            stock_unit_id=self.id,
+            old_status=old_status,
+            new_status=new_status,
+            note=note,
+            changed_by_rep_id=changed_by_rep_id,
+        )
+        db.add(history)
+        return history
+
+
+class StockUnitStatusHistory(Base):
+    __tablename__ = "stock_unit_status_history"
+
+    id                 = Column(BigInteger, primary_key=True)
+    stock_unit_id      = Column(BigInteger, ForeignKey("stock_units.id"), nullable=False)
+    old_status         = Column(String(30), nullable=False)
+    new_status         = Column(String(30), nullable=False)
+    changed_at         = Column(DateTime, server_default=func.now())
+    note               = Column(Text, nullable=True)
+    changed_by_rep_id  = Column(Integer, ForeignKey("reps.id"), nullable=True)
+
+    stock_unit         = relationship("StockUnit", back_populates="status_history")
+    changed_by_rep     = relationship("Rep")
+
+
+class Technician(Base):
+    __tablename__ = "technicians"
+
+    id              = Column(Integer, primary_key=True)
+    name            = Column(String(200), nullable=False)
+    contact_phone   = Column(String(30), nullable=False)
+    contact_email   = Column(String(100), nullable=True)
+    specialty       = Column(Text, nullable=True)
+    is_active       = Column(Boolean, default=True)
+    created_at      = Column(DateTime, server_default=func.now())
+
+
+class RepairJob(Base):
+    __tablename__ = "repair_jobs"
+
+    id                           = Column(BigInteger, primary_key=True)
+    stock_unit_id                = Column(BigInteger, ForeignKey("stock_units.id"), nullable=False)
+    technician_id                = Column(Integer, ForeignKey("technicians.id"), nullable=False)
+    date_sent                    = Column(Date, nullable=False)
+    date_returned                = Column(Date, nullable=True)
+    amount_charged_by_technician = Column(Numeric(12, 2), nullable=True)
+    outcome                      = Column(String(20), nullable=False, default="pending")
+    linked_job_card_id           = Column(Integer, ForeignKey("job_cards.id"), nullable=True)
+    created_at                   = Column(DateTime, server_default=func.now())
+
+    stock_unit   = relationship("StockUnit")
+    technician   = relationship("Technician")
+    linked_job_card = relationship("JobCard", back_populates="repair_jobs")
 
 
 class Route(Base):
@@ -300,6 +364,9 @@ class JobCard(Base):
     priority                = Column(String(20), nullable=False, default="MEDIUM")
     due_date                = Column(Date, nullable=True)
     serial_number           = Column(String(100), nullable=True)
+    stock_unit_id           = Column(BigInteger, ForeignKey("stock_units.id"), nullable=True)
+    job_type                = Column(String(20), nullable=True)
+    device_source           = Column(String(20), nullable=True)
     paper_grn_reference     = Column(String(100), nullable=True)
     intake_method           = Column(String(20), nullable=False, default="WALK_IN")
     status                  = Column(String(20), nullable=False, default="NEW")
@@ -311,6 +378,8 @@ class JobCard(Base):
     received_by_staff = relationship("Rep", foreign_keys=[received_by_staff_id], back_populates="job_cards")
     assigned_to_staff = relationship("Rep", foreign_keys=[assigned_to_staff_id])
     linked_sales_invoice = relationship("Invoice")
+    stock_unit = relationship("StockUnit")
+    repair_jobs = relationship("RepairJob", back_populates="linked_job_card", order_by="desc(RepairJob.id)")
 
     @property
     def received_by_staff_name(self):
@@ -323,6 +392,18 @@ class JobCard(Base):
     @property
     def linked_sales_invoice_number(self):
         return self.linked_sales_invoice.invoice_number if self.linked_sales_invoice else None
+
+    @property
+    def latest_repair_job(self):
+        return self.repair_jobs[0] if self.repair_jobs else None
+
+    @property
+    def latest_repair_job_amount_charged_by_technician(self):
+        return self.latest_repair_job.amount_charged_by_technician if self.latest_repair_job else None
+
+    @property
+    def latest_repair_job_outcome(self):
+        return self.latest_repair_job.outcome if self.latest_repair_job else None
 
 
 class Customer(Base):

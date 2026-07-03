@@ -22,12 +22,15 @@ import Customers     from "./pages/Customers";
 import CustomerDetail from "./pages/CustomerDetail";
 import StaffManagement from "./pages/StaffManagement";
 import RepPortfolio    from "./pages/RepPortfolio";
+import Technicians from "./pages/Technicians";
+import TechnicianDetail from "./pages/TechnicianDetail";
 import CreditAging   from "./pages/CreditAging";
 import Settings      from "./pages/Settings";
 import Reports from "./pages/Reports";
 import NewJobCard from "./pages/NewJobCard";
 import JobCards from "./pages/JobCards";
 import JobCardDetail from "./pages/JobCardDetail";
+import SerialLookup from "./pages/SerialLookup";
 import BackupManager  from "./pages/BackupManager";
 import Suppliers      from "./pages/Suppliers";
 import StockItems     from "./pages/StockItems";
@@ -54,9 +57,12 @@ export default function App() {
           <Route path="customers/:id" element={<CustomerDetail />} />
           <Route path="suppliers"    element={<Suppliers />} />
           <Route path="stock-items"   element={<StockItems />} />
+          <Route path="serial-history" element={<SerialLookup />} />
           <Route path="stock-receipts/new" element={<NewStockReceipt />} />
           <Route path="staff"              element={<StaffManagement />} />
           <Route path="staff/:repId/portfolio" element={<RepPortfolio />} />
+          <Route path="technicians" element={<Technicians />} />
+          <Route path="technicians/:id" element={<TechnicianDetail />} />
           <Route path="credit"       element={<CreditAging />} />
           <Route path="settings"     element={<Settings />} />
           <Route path="reports"      element={<Reports />} />

@@ -27,14 +27,14 @@ Calculation chain (applied server-side on every create):
   Internal audit fields (base_subtotal, profit_margin_amount, etc.) are always
   stored on the invoice row regardless of category.
 """
-from models import Invoice, Customer, Rep, Route, Payment, InvoiceItem, Settings, StockItem, StockUnit
+from models import Invoice, Customer, Rep, Route, Payment, InvoiceItem, Settings, StockItem, StockUnit, StockReceipt, StockReceiptItem
 from decimal import Decimal, ROUND_HALF_UP
 import re
 import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from sqlalchemy.exc import IntegrityError, DataError
 from typing import Optional, List
 from datetime import date
@@ -458,76 +458,115 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
     bulk_item_map:       dict[int, StockItem]  = {}
     line_stock_item_ids: list[Optional[int]]   = []
 
-    # Track cumulative qty decrements for bulk items within this same invoice
-    # so that selling 3 of the same cable on 3 separate lines still validates
-    # against the single qty_on_hand value.
-    bulk_pending_decrements: dict[int, int] = {}  # stock_item_id -> total qty to deduct
+    is_repair_invoice = payload.service_type == "REPAIR"
 
-    for i, item_data in enumerate(payload.items, start=1):
-        serial   = (item_data.serial_no or "").strip() or None
-        sii_id   = item_data.stock_item_id
+    if is_repair_invoice:
+        # Repair invoices are service-only; no stock validation or stock pricing chain.
+        line_stock_item_ids = [None] * len(payload.items)
+    else:
+        # Track cumulative qty decrements for bulk items within this same invoice
+        # so that selling 3 of the same cable on 3 separate lines still validates
+        # against the single qty_on_hand value.
+        bulk_pending_decrements: dict[int, int] = {}  # stock_item_id -> total qty to deduct
 
-        if serial:
-            # ── Serialized item: look up the StockUnit ───────────────────────
-            unit = (
-                db.query(StockUnit)
-                .filter(StockUnit.serial_number == serial)
-                .first()
-            )
-            if not unit:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Line {i}: serial number '{serial}' not found in inventory",
-                )
-            if unit.status != "in_stock":
-                status_msgs = {
-                    "sold":              f"already sold",
-                    "returned":          "returned and pending inspection",
-                    "warranty_replaced": "replaced under warranty",
-                    "defective":         "marked defective",
-                }
-                reason = status_msgs.get(unit.status, f"status='{unit.status}'")
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"Line {i}: serial '{serial}' is not available "
-                        f"({reason}). Cannot sell the same unit twice."
-                    ),
-                )
-            if serial in serial_unit_map:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Line {i}: serial '{serial}' appears more than once in this invoice",
-                )
-            serial_unit_map[serial] = unit
-            line_stock_item_ids.append(unit.stock_item_id)
+        for i, item_data in enumerate(payload.items, start=1):
+            serial_str = (item_data.serial_no or "").strip() or None
+            sii_id     = item_data.stock_item_id
 
-        elif sii_id:
-            # ── Bulk non-serialized item: check qty_on_hand ──────────────────
-            si = db.query(StockItem).filter(StockItem.id == sii_id).first()
-            if not si:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Line {i}: stock item id={sii_id} not found",
-                )
-            qty_needed = item_data.qty or 1
-            bulk_pending_decrements[sii_id] = bulk_pending_decrements.get(sii_id, 0) + qty_needed
-            # Check cumulative demand against current on-hand
-            if si.qty_on_hand < bulk_pending_decrements[sii_id]:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"Line {i}: insufficient stock for item '{si.model}' "
-                        f"(id={sii_id}). On hand: {si.qty_on_hand}, "
-                        f"requested total across all lines: {bulk_pending_decrements[sii_id]}."
-                    ),
-                )
-            bulk_item_map[i] = si
-            line_stock_item_ids.append(sii_id)
+            if serial_str:
+                # ── Serialized item: split and look up each StockUnit ────────────
+                serials = [s.strip() for s in serial_str.split(",") if s.strip()]
+                if not serials:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Line {i}: serial number field is empty",
+                    )
+                
+                qty_needed = item_data.qty or 1
+                if len(serials) != qty_needed:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Line {i}: quantity ({qty_needed}) does not match the number of serial numbers ({len(serials)})",
+                    )
 
-        else:
-            # ── Free-text line: no stock tracking ───────────────────────────
-            line_stock_item_ids.append(None)
+                line_stock_item_id = None
+                for serial in serials:
+                    unit = (
+                        db.query(StockUnit)
+                        .options(joinedload(StockUnit.receipt_item))
+                        .filter(StockUnit.serial_number == serial)
+                        .first()
+                    )
+                    if not unit:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Line {i}: serial number '{serial}' not found in inventory",
+                        )
+                    if unit.status != "in_stock":
+                        status_msgs = {
+                            "sold":                         "already sold",
+                            "returned":                     "returned and pending inspection",
+                            "returned_pending_check":      "returned and pending inspection",
+                            "with_manufacturer":            "sent to manufacturer for warranty claim",
+                            "with_internal_team_warranty":  "sent to internal warranty team",
+                            "with_internal_team_paid":      "sent to internal paid repair team",
+                            "with_third_party_warranty":    "sent to third-party warranty technician",
+                            "with_third_party_paid":        "sent to third-party paid repair technician",
+                            "repaired_awaiting_pickup":     "repaired and awaiting customer pickup",
+                            "warranty_replaced":            "replaced under warranty",
+                            "returned_unrepaired":         "returned unrepaired to customer",
+                            "defective":                    "marked defective",
+                            "scrapped":                     "scrapped",
+                        }
+                        reason = status_msgs.get(unit.status, f"status='{unit.status}'")
+                        raise HTTPException(
+                            status_code=409,
+                            detail=(
+                                f"Line {i}: serial '{serial}' is not available "
+                                f"({reason}). Cannot sell the same unit twice."
+                            ),
+                        )
+                    if serial in serial_unit_map:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Line {i}: serial '{serial}' appears more than once in this invoice",
+                        )
+                    serial_unit_map[serial] = unit
+                    if line_stock_item_id is None:
+                        line_stock_item_id = unit.stock_item_id
+                    elif line_stock_item_id != unit.stock_item_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Line {i}: serial '{serial}' belongs to a different stock item (catalog ID {unit.stock_item_id}) than other serials in this line (catalog ID {line_stock_item_id})",
+                        )
+                line_stock_item_ids.append(line_stock_item_id)
+
+            elif sii_id:
+                # ── Bulk non-serialized item: check qty_on_hand ──────────────────
+                si = db.query(StockItem).filter(StockItem.id == sii_id).first()
+                if not si:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Line {i}: stock item id={sii_id} not found",
+                    )
+                qty_needed = item_data.qty or 1
+                bulk_pending_decrements[sii_id] = bulk_pending_decrements.get(sii_id, 0) + qty_needed
+                # Check cumulative demand against current on-hand
+                if si.qty_on_hand < bulk_pending_decrements[sii_id]:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"Line {i}: insufficient stock for item '{si.model}' "
+                            f"(id={sii_id}). On hand: {si.qty_on_hand}, "
+                            f"requested total across all lines: {bulk_pending_decrements[sii_id]}."
+                        ),
+                    )
+                bulk_item_map[i] = si
+                line_stock_item_ids.append(sii_id)
+
+            else:
+                # ── Free-text line: no stock tracking ───────────────────────────
+                line_stock_item_ids.append(None)
 
     # ── Build line items: raw cost -> customer-facing rate/amount ─────────────
     line_results  = []
@@ -539,17 +578,67 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
         if item_data.rate is None or Decimal(str(item_data.rate)) <= 0:
             raise HTTPException(status_code=400, detail=f"Line item {i} must include a rate greater than 0.")
 
-        qty      = item_data.qty or 1
-        raw_rate = Decimal(str(item_data.rate or 0))
-        raw_amt  = (Decimal(str(qty)) * raw_rate).quantize(TWO_PLACES, ROUND_HALF_UP)
+        qty = item_data.qty or 1
+        serial_str = (item_data.serial_no or "").strip() or None
+        sii_id = item_data.stock_item_id
 
-        line = calculate_line_item(
-            raw_amount        = raw_amt,
-            invoice_category  = payload.invoice_category,
-            profit_margin_pct = profit_margin_pct,
-            sscl_pct          = sscl_pct,
-            vat_pct           = vat_pct,
-        )
+        # Resolve receipt-time pricing if stock-linked and not overridden
+        receipt_item = None
+        if not is_repair_invoice:
+            if serial_str:
+                serials = [s.strip() for s in serial_str.split(",") if s.strip()]
+                if serials:
+                    unit = serial_unit_map.get(serials[0])
+                    if unit:
+                        receipt_item = unit.receipt_item
+            elif sii_id:
+                receipt_item = (
+                    db.query(StockReceiptItem)
+                    .join(StockReceipt, StockReceipt.id == StockReceiptItem.receipt_id)
+                    .filter(StockReceiptItem.stock_item_id == sii_id)
+                    .order_by(
+                        desc(StockReceipt.received_date),
+                        desc(StockReceiptItem.id)
+                    )
+                    .first()
+                )
+
+        pricing_override = getattr(item_data, "pricing_override", False)
+
+        if not is_repair_invoice and not pricing_override and receipt_item:
+            # Use receipt item's exact stored cost/margins/taxes
+            raw_rate = receipt_item.unit_cost
+            raw_amt  = (Decimal(str(qty)) * raw_rate).quantize(TWO_PLACES, ROUND_HALF_UP)
+            profit_margin_amount = (Decimal(str(qty)) * receipt_item.operation_cost_amount).quantize(TWO_PLACES, ROUND_HALF_UP)
+
+            if payload.invoice_category == "ALL_INC":
+                sscl_amount = (Decimal(str(qty)) * receipt_item.sscl_amount).quantize(TWO_PLACES, ROUND_HALF_UP)
+                vat_amount  = (Decimal(str(qty)) * receipt_item.vat_amount).quantize(TWO_PLACES, ROUND_HALF_UP)
+                display_amount = (Decimal(str(qty)) * receipt_item.final_unit_price).quantize(TWO_PLACES, ROUND_HALF_UP)
+            else:
+                sscl_amount = Decimal("0.00")
+                vat_amount  = Decimal("0.00")
+                display_amount = (Decimal(str(qty)) * receipt_item.subtotal_after_opcost).quantize(TWO_PLACES, ROUND_HALF_UP)
+
+            line = {
+                "raw_amount":           raw_amt,
+                "profit_margin_amount": profit_margin_amount,
+                "sscl_amount":          sscl_amount,
+                "vat_amount":           vat_amount,
+                "display_amount":       display_amount,
+            }
+        else:
+            raw_rate = Decimal(str(item_data.rate or 0))
+            raw_amt  = (Decimal(str(qty)) * raw_rate).quantize(TWO_PLACES, ROUND_HALF_UP)
+
+            line = calculate_line_item(
+                raw_amount        = raw_amt,
+                invoice_category  = payload.invoice_category,
+                profit_margin_pct = profit_margin_pct,
+                sscl_pct          = sscl_pct,
+                vat_pct           = vat_pct,
+            )
+
         line_results.append(line)
 
         display_rate = (line["display_amount"] / Decimal(str(qty))).quantize(TWO_PLACES, ROUND_HALF_UP)
@@ -621,31 +710,32 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
     db.flush()
 
     # ── STOCK UPDATES (same transaction, after flush) ────────────────────────
-    # All validation already passed above; we only update here.
-    # No individual commits — everything is committed atomically at the end.
+    # Only SALE invoices mutate warehouse stock. Repair invoices are service-only.
+    if not is_repair_invoice:
+        for i, (item_data, item_obj) in enumerate(zip(payload.items, item_objects), start=1):
+            serial_str = (item_data.serial_no or "").strip() or None
+            sii_id = item_data.stock_item_id
 
-    for i, (item_data, item_obj) in enumerate(zip(payload.items, item_objects), start=1):
-        serial = (item_data.serial_no or "").strip() or None
-        sii_id = item_data.stock_item_id
+            if serial_str:
+                serials = [s.strip() for s in serial_str.split(",") if s.strip()]
+                for serial in serials:
+                    # Mark the serialized unit as sold
+                    unit = serial_unit_map[serial]
+                    unit.status               = "sold"
+                    unit.sold_invoice_item_id = item_obj.id
 
-        if serial:
-            # Mark the serialized unit as sold
-            unit = serial_unit_map[serial]
-            unit.status               = "sold"
-            unit.sold_invoice_item_id = item_obj.id
+                    # Decrement qty_on_hand on the catalog item
+                    si = db.query(StockItem).filter(StockItem.id == unit.stock_item_id).first()
+                    if si:
+                        si.qty_on_hand = max(0, (si.qty_on_hand or 0) - 1)
 
-            # Decrement qty_on_hand on the catalog item
-            si = db.query(StockItem).filter(StockItem.id == unit.stock_item_id).first()
-            if si:
-                si.qty_on_hand = max(0, (si.qty_on_hand or 0) - 1)
+            elif sii_id:
+                # Decrement bulk qty_on_hand
+                si = bulk_item_map[i]
+                qty_sold = item_data.qty or 1
+                si.qty_on_hand = max(0, (si.qty_on_hand or 0) - qty_sold)
 
-        elif sii_id:
-            # Decrement bulk qty_on_hand
-            si = bulk_item_map[i]
-            qty_sold = item_data.qty or 1
-            si.qty_on_hand = max(0, (si.qty_on_hand or 0) - qty_sold)
-
-        # Free-text lines: nothing to do
+            # Free-text lines: nothing to do
 
     try:
         db.commit()
@@ -736,7 +826,12 @@ def search_by_serial(serial_number: str, db: Session = Depends(get_db)):
 
     item = (
         db.query(InvoiceItem)
-        .filter(InvoiceItem.serial_no.ilike(clean_serial))
+        .filter(or_(
+            InvoiceItem.serial_no.ilike(clean_serial),
+            InvoiceItem.serial_no.ilike(f"%,{clean_serial}"),
+            InvoiceItem.serial_no.ilike(f"{clean_serial},%"),
+            InvoiceItem.serial_no.ilike(f"%,{clean_serial},%")
+        ))
         .order_by(InvoiceItem.created_at.desc())
         .first()
     )

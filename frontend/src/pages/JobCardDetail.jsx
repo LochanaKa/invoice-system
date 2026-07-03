@@ -21,6 +21,8 @@ export default function JobCardDetail() {
   const [dueDate, setDueDate] = useState("");
   const [staff, setStaff] = useState([]);
   const [error, setError] = useState(null);
+  const [workflowSaving, setWorkflowSaving] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -53,6 +55,67 @@ export default function JobCardDetail() {
       setError("Failed to update job card.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleWorkflowAction = async (action) => {
+    setWorkflowSaving(true);
+    setActionError(null);
+    try {
+      let payload = {};
+      let note = (card.notes || "") + `\n[Workflow] ${action} triggered`;
+
+      switch (action) {
+        case "send_manufacturer":
+          payload.status = "SENT_TO_MANUFACTURER";
+          break;
+        case "send_internal_warranty":
+          payload.status = "WITH_INTERNAL_TEAM_WARRANTY";
+          break;
+        case "send_third_party_warranty":
+          payload.status = "WITH_THIRD_PARTY_WARRANTY";
+          break;
+        case "replace_under_warranty":
+          payload.status = "WARRANTY_REPLACED";
+          break;
+        case "send_internal_paid":
+          payload.status = "WITH_INTERNAL_TEAM_PAID";
+          break;
+        case "send_third_party_paid":
+          payload.status = "WITH_THIRD_PARTY_PAID";
+          break;
+        default:
+          throw new Error("Unknown workflow action");
+      }
+
+      payload.notes = note;
+      const updated = await updateJobCard(id, payload);
+      setCard(updated);
+    } catch (err) {
+      setActionError(err.response?.data?.detail || err.message || "Failed to apply action.");
+    } finally {
+      setWorkflowSaving(false);
+    }
+  };
+
+  const handleMarkFixed = async () => {
+    // For paid repairs, ensure an invoice exists before marking complete.
+    if (card.job_type === "PAID_REPAIR" && !card.linked_sales_invoice_id) {
+      // Redirect staff to create the repair invoice; the invoice flow will link back to this job card.
+      navigate(`/invoices/new-repair?job_card_id=${card.id}`);
+      return;
+    }
+
+    setWorkflowSaving(true);
+    setActionError(null);
+    try {
+      const note = (card.notes || "") + `\n[Workflow] Marked as fixed`;
+      const updated = await updateJobCard(id, { status: "READY_FOR_PICKUP", notes: note });
+      setCard(updated);
+    } catch (err) {
+      setActionError(err.response?.data?.detail || err.message || "Failed to mark fixed.");
+    } finally {
+      setWorkflowSaving(false);
     }
   };
 
@@ -153,68 +216,99 @@ export default function JobCardDetail() {
           </div>
 
           <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
-            <div className="text-sm font-semibold text-[#1F3C8A]">Update Status</div>
-            <label className="mt-3 block text-sm font-medium text-gray-700">Current Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-            >
-              {statusOptions.map((option) => (
-                <option key={option} value={option}>{option.replaceAll("_", " ")}</option>
-              ))}
-            </select>
+            <div className="text-sm font-semibold text-[#1F3C8A]">Workflow</div>
 
-            <label className="mt-4 block text-sm font-medium text-gray-700">Priority</label>
-            <select
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
-            </select>
+            <div className="mt-3 text-sm text-gray-700">
+              <div className="font-medium">Job Type</div>
+              <div className="mt-1">{card.job_type ? card.job_type.replaceAll("_", " ") : "—"}</div>
+            </div>
 
-            <label className="mt-4 block text-sm font-medium text-gray-700">Due Date</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-            />
+            <div className="mt-3 text-sm text-gray-700">
+              <div className="font-medium">Current Status</div>
+              <div className="mt-1">{(card.status || "NEW").replaceAll("_", " ")}</div>
+            </div>
 
-            <label className="mt-4 block text-sm font-medium text-gray-700">Assign Technician</label>
-            <select
-              value={assignedToStaffId}
-              onChange={(e) => setAssignedToStaffId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Unassigned</option>
-              {staff.map((rep) => (
-                <option key={rep.id} value={rep.id}>{rep.name} {rep.code ? `(${rep.code})` : ""}</option>
-              ))}
-            </select>
+            <div className="mt-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Next Actions</div>
+              <div className="mt-2 flex flex-col gap-2">
+                {/* Warranty path actions */}
+                {card.job_type === "WARRANTY_REPAIR" && (
+                  <>
+                    <button
+                      onClick={() => handleWorkflowAction("send_manufacturer")}
+                      disabled={workflowSaving}
+                      className="w-full text-left rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
+                    >Send to Manufacturer (Warranty)</button>
+                    <button
+                      onClick={() => handleWorkflowAction("send_internal_warranty")}
+                      disabled={workflowSaving}
+                      className="w-full text-left rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
+                    >Send to Internal Warranty Team</button>
+                    <button
+                      onClick={() => handleWorkflowAction("send_third_party_warranty")}
+                      disabled={workflowSaving}
+                      className="w-full text-left rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
+                    >Send to Third-party Warranty</button>
+                    <button
+                      onClick={() => handleWorkflowAction("replace_under_warranty")}
+                      disabled={workflowSaving}
+                      className="w-full text-left rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                    >Replace Unit (Warranty)</button>
+                  </>
+                )}
 
-            <label className="mt-4 block text-sm font-medium text-gray-700">Notes</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={5}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-              placeholder="Add diagnostic notes, progress updates, or pickup instructions"
-            />
+                {/* Paid repair path actions */}
+                {card.job_type === "PAID_REPAIR" && (
+                  <>
+                    <button
+                      onClick={() => handleWorkflowAction("send_internal_paid")}
+                      disabled={workflowSaving}
+                      className="w-full text-left rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
+                    >Send to Internal Paid Repair</button>
+                    <button
+                      onClick={() => handleWorkflowAction("send_third_party_paid")}
+                      disabled={workflowSaving}
+                      className="w-full text-left rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
+                    >Send to Third-party Paid Repair</button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleMarkFixed()}
+                        disabled={workflowSaving}
+                        className="flex-1 rounded-lg bg-[#1F3C8A] px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                      >Mark as Fixed</button>
+                      <button
+                        onClick={() => navigate(`/invoices/new-repair?job_card_id=${card.id}`)}
+                        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                      >Create Repair Invoice</button>
+                    </div>
+                  </>
+                )}
 
-            {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
+                {/* Fallback: generic status picker */}
+                {!card.job_type && (
+                  <div>
+                    <label className="block text-xs text-gray-500">Manual Status</label>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option} value={option}>{option.replaceAll("_", " ")}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#1F3C8A] px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    >{saving ? <RefreshCw className="animate-spin" size={14} /> : <Save size={14} />} Save</button>
+                  </div>
+                )}
+              </div>
+            </div>
 
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#1F3C8A] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {saving ? <RefreshCw className="animate-spin" size={14} /> : <Save size={14} />}
-              {saving ? "Saving..." : "Save Update"}
-            </button>
+            {actionError && <div className="mt-3 text-sm text-red-600">{actionError}</div>}
+            {workflowSaving && <div className="mt-3 text-sm text-gray-600">Applying action…</div>}
           </div>
         </div>
       </div>

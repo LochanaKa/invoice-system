@@ -1,11 +1,24 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ClipboardList, CheckCircle2, AlertCircle, Plus, Loader2 } from "lucide-react";
-import { createJobCard, getReps, getCustomers, createCustomer, searchBySerial } from "../services/api";
+import { createJobCard, getReps, getCustomers, createCustomer, searchBySerial, searchStockUnits } from "../services/api";
 
 const intakeOptions = [
   { value: "WALK_IN", label: "Walk-in Drop-off", description: "Customer brought the device directly to the shop." },
   { value: "FIELD_GRN", label: "Field Collection (Manual GRN)", description: "Collected from the field with a paper GRN." },
+];
+
+const deviceSourceOptions = [
+  {
+    value: "OURS",
+    label: "Our Inventory",
+    description: "This device is coming from our stock and should be matched to a serial-tracked unit.",
+  },
+  {
+    value: "CUSTOMER_OWNED",
+    label: "Customer-owned Device",
+    description: "The customer brought their own device for repair.",
+  },
 ];
 
 export default function NewJobCard() {
@@ -20,6 +33,7 @@ export default function NewJobCard() {
     assigned_to_staff_id: "",
     priority: "NORMAL",
     due_date: "",
+    device_source: "OURS",
     serial_number: "",
     paper_grn_reference: "",
     linked_sales_invoice_id: null,
@@ -30,6 +44,9 @@ export default function NewJobCard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [selectedStockUnit, setSelectedStockUnit] = useState(null);
+  const [stockUnitLoading, setStockUnitLoading] = useState(false);
+  const [stockUnitError, setStockUnitError] = useState(null);
 
   // Quick Add customer states
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -86,6 +103,34 @@ export default function NewJobCard() {
     return () => clearTimeout(delayDebounceFn);
   }, [form.serial_number]);
 
+  useEffect(() => {
+    const serial = (form.serial_number || "").trim();
+    if (form.device_source !== "OURS" || !serial) {
+      setSelectedStockUnit(null);
+      setStockUnitError(null);
+      setStockUnitLoading(false);
+      return;
+    }
+
+    setStockUnitLoading(true);
+    const delay = setTimeout(async () => {
+      try {
+        const unit = await searchStockUnits(serial);
+        setSelectedStockUnit(unit);
+        setStockUnitError(null);
+      } catch (err) {
+        setSelectedStockUnit(null);
+        setStockUnitError(
+          err.response?.data?.detail || "Could not find a matching stock unit for this serial number."
+        );
+      } finally {
+        setStockUnitLoading(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delay);
+  }, [form.device_source, form.serial_number]);
+
   async function handleQuickAddSave() {
     if (!quickAddName.trim()) return;
     setQuickAdding(true);
@@ -117,6 +162,12 @@ export default function NewJobCard() {
     setError(null);
     setSuccess(null);
 
+    if (form.device_source === "OURS" && !selectedStockUnit) {
+      setError("Please select a valid stock unit serial from our inventory for 'Ours' device source.");
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const payload = {
         ...form,
@@ -125,8 +176,11 @@ export default function NewJobCard() {
         assigned_to_staff_id: form.assigned_to_staff_id ? Number(form.assigned_to_staff_id) : null,
         priority: form.priority,
         due_date: form.due_date || null,
-        serial_number: form.serial_number.trim(),
-        paper_grn_reference: form.paper_grn_reference.trim(),
+        device_source: form.device_source,
+        serial_number: form.serial_number.trim() || null,
+        stock_unit_id: form.device_source === "OURS" ? selectedStockUnit?.id : null,
+        job_type: form.device_source === "CUSTOMER_OWNED" ? "PAID_REPAIR" : null,
+        paper_grn_reference: form.paper_grn_reference.trim() || null,
       };
 
       await createJobCard(payload);
@@ -141,10 +195,14 @@ export default function NewJobCard() {
         assigned_to_staff_id: "",
         priority: "NORMAL",
         due_date: "",
+        device_source: "OURS",
         serial_number: "",
         paper_grn_reference: "",
         linked_sales_invoice_id: null,
       });
+      setSelectedStockUnit(null);
+      setStockUnitError(null);
+      setStockUnitLoading(false);
       setSalesHistory(null);
       setSerialChecked(false);
       setTimeout(() => navigate("/job-cards"), 800);
@@ -276,6 +334,39 @@ export default function NewJobCard() {
               />
             </div>
 
+            <div className="rounded-xl border border-gray-200 bg-slate-50 p-4">
+              <p className="mb-3 text-sm font-semibold text-gray-800">Device Source</p>
+              <div className="space-y-2">
+                {deviceSourceOptions.map((option) => {
+                  const checked = form.device_source === option.value;
+                  return (
+                    <label
+                      key={option.value}
+                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 ${checked ? "border-[#1F3C8A] bg-blue-50" : "border-gray-200 bg-white"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="device_source"
+                        value={option.value}
+                        checked={checked}
+                        onChange={(e) => {
+                          handleChange(e);
+                          if (e.target.value !== "OURS") {
+                            setSelectedStockUnit(null);
+                            setStockUnitError(null);
+                          }
+                        }}
+                      />
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{option.label}</div>
+                        <div className="text-xs text-gray-500">{option.description}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Serial Number</label>
               <div className="relative">
@@ -287,12 +378,40 @@ export default function NewJobCard() {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
                   placeholder="Scan or type serial number to check sales history"
                 />
-                {searchingSerial && (
+                {(searchingSerial || stockUnitLoading) && (
                   <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-blue-400" />
                 )}
               </div>
 
-              {/* Auto-tag result */}
+              {form.device_source === "OURS" && (
+                <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
+                  {selectedStockUnit ? (
+                    <div className="space-y-2 text-sm text-gray-700">
+                      <div className="font-semibold text-gray-900">Selected Stock Unit</div>
+                      <div>Serial: <span className="font-medium">{selectedStockUnit.serial_number}</span></div>
+                      <div>Item: <span className="font-medium">{selectedStockUnit.brand || selectedStockUnit.description || "N/A"}</span></div>
+                      <div>Status: <span className="font-medium">{selectedStockUnit.status}</span></div>
+                      {selectedStockUnit.sold_invoice_number && (
+                        <div>Sold invoice: <span className="font-medium">#{selectedStockUnit.sold_invoice_number}</span></div>
+                      )}
+                      {selectedStockUnit.warranty_months != null && (
+                        <div>Warranty: <span className="font-medium">{selectedStockUnit.warranty_months} months</span></div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">
+                      {stockUnitError ? (
+                        <span className="text-red-600">{stockUnitError}</span>
+                      ) : (
+                        <span>
+                          Enter the serial number for a unit from our inventory. The system will automatically pick the closest matching available stock unit.
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {!searchingSerial && serialChecked && form.serial_number.trim() && (
                 <div className="mt-2">
                   {salesHistory ? (

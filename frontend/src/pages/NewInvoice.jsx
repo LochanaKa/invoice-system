@@ -269,7 +269,11 @@ export default function NewInvoice() {
     if (!serial) return;
 
     // Duplicate guard — don't add if same serial is already in the list
-    if (items.some((it) => it.serial_no === serial)) {
+    const serialExists = items.some((it) => {
+      const s = (it.serial_no || "").toString();
+      return s.split(",").map(x=>x.trim()).includes(serial);
+    });
+    if (serialExists) {
       setSerialError(`Serial "${serial}" is already added to this invoice.`);
       return;
     }
@@ -279,28 +283,63 @@ export default function NewInvoice() {
     setSerialLoading(true);
 
     try {
-      const unit = await lookupSerial(serial);
+      let unit = null;
+      try {
+        unit = await lookupSerial(serial);
+      } catch (err) {
+        // If exact lookup failed with 404, try a fuzzy search before giving up
+        const status = err.response?.status;
+        if (status === 404) {
+          try {
+            unit = await lookupSerial(serial, true);
+            // Inform the operator that a fuzzy match was used
+            setSerialError(`No exact match for "${serial}" — using closest match: ${unit.serial_number}`);
+          } catch (err2) {
+            // rethrow original to be handled by outer catch
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
       // unit shape: { serial_number, status, stock_item_id, brand, model,
       //               description, final_unit_price, ... }
-
       const desc = [unit.brand, unit.model].filter(Boolean).join(" ") || unit.description || "";
 
-      setItems((prev) => [
-        ...prev.filter((it) => it.description || it.rate), // drop any trailing empty row first
-        {
-          ...EMPTY_ITEM,
-          description:       desc,
-          serial_no:         unit.serial_number,
-          qty:               1,
-          // Use unit_cost as the raw rate — the backend adds margin/SSCL/VAT from global rates.
-          // This prevents the backend from double-applying taxes on an already-margined price.
-          rate:              String(unit.latest_price?.unit_cost ?? unit.final_unit_price ?? ""),
-          stock_item_id:     unit.stock_item_id,
-          suggested_price:   unit.final_unit_price,
-          stock_price_chain: unit.latest_price ?? null,
-          pricing_override:  false,
-        },
-      ]);
+      setItems((prev) => {
+        // drop any trailing empty row first
+        const base = prev.filter((it) => it.description || it.rate);
+        // Try to find an existing row for the same stock_item_id
+        const idx = base.findIndex((it) => it.stock_item_id === unit.stock_item_id);
+        if (idx >= 0) {
+          // Append serial to the existing row and increment qty
+          const existing = { ...base[idx] };
+          const existingSerials = (existing.serial_no || "").toString();
+          const mergedSerials = existingSerials ? `${existingSerials},${unit.serial_number}` : unit.serial_number;
+          existing.serial_no = mergedSerials;
+          existing.qty = Number(existing.qty || 0) + 1;
+          // keep pricing info as-is
+          base[idx] = existing;
+          return base;
+        }
+
+        // Otherwise create a new row for this serialized unit
+        return [
+          ...base,
+          {
+            ...EMPTY_ITEM,
+            description:       desc,
+            serial_no:         unit.serial_number,
+            qty:               1,
+            // Use unit_cost as the raw rate — the backend adds margin/SSCL/VAT from global rates.
+            rate:              String(unit.latest_price?.unit_cost ?? unit.final_unit_price ?? ""),
+            stock_item_id:     unit.stock_item_id,
+            suggested_price:   unit.final_unit_price,
+            stock_price_chain: unit.latest_price ?? null,
+            pricing_override:  false,
+          },
+        ];
+      });
 
       setSerialInput("");
       setSerialSuccess(`✓ Added: ${desc} (${serial})`);
@@ -477,6 +516,7 @@ export default function NewInvoice() {
           rate: (it.stock_price_chain && !it.pricing_override)
             ? parseFloat(it.stock_price_chain.unit_cost) || 0
             : parseFloat(it.rate) || 0,
+          pricing_override: !!it.pricing_override,
         })),
         route_id: form.route_id ? parseInt(form.route_id) : null,
       };

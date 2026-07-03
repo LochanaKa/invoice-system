@@ -232,6 +232,24 @@ export const reactivateRep = (id) =>
 export const updateRep = (id, data) =>
   api.patch(`/reps/${id}`, data).then((r) => r.data);
 
+export const getTechnicians = (params) =>
+  api.get("/technicians", { params }).then((r) => r.data);
+
+export const getTechnician = (id) =>
+  api.get(`/technicians/${id}`).then((r) => r.data);
+
+export const createTechnician = (data) =>
+  api.post("/technicians", data).then((r) => r.data);
+
+export const updateTechnician = (id, data) =>
+  api.patch(`/technicians/${id}`, data).then((r) => r.data);
+
+export const deactivateTechnician = (id) =>
+  api.patch(`/technicians/${id}/deactivate`).then((r) => r.data);
+
+export const getTechnicianRepairHistory = (technicianId) =>
+  api.get(`/technicians/${technicianId}/repair-jobs`).then((r) => r.data);
+
 export const createJobCard = (data) =>
   api.post("/jobs", data).then((r) => r.data);
 
@@ -339,6 +357,22 @@ export const addSerialsToReceiptItem = (receiptId, receiptItemId, serialNumbers)
 export const getStockUnits = (params) =>
   api.get("/stock-units", { params }).then((r) => r.data);
 
-export const lookupSerial = (serialNumber) =>
-  api.get(`/stock-units/lookup/${serialNumber}`).then((r) => r.data);
+export const lookupSerial = (serialNumber, fuzzy = false) =>
+  api
+    .get(`/stock-units/lookup/${encodeURIComponent(serialNumber)}`, {
+      params: fuzzy ? { fuzzy: true } : undefined,
+    })
+    .then((r) => r.data);
+
+export const searchStockUnits = (serialNumber) =>
+  api
+    .get(`/stock-units/lookup/${encodeURIComponent(serialNumber)}`, {
+      params: { fuzzy: true },
+    })
+    .then((r) => r.data);
+
+export const getSerialFullHistory = (serialNumber) =>
+  api
+    .get(`/stock-units/${encodeURIComponent(serialNumber)}/full-history`)
+    .then((r) => r.data);
 

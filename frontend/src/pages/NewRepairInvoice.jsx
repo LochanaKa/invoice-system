@@ -18,7 +18,7 @@ import { Plus, Trash2, Info, Search, ClipboardList, Loader2 } from "lucide-react
 import {
   getLookups, getCustomers, createInvoice, getSettings,
   getNextInvoiceNumber, createCustomer, createRoute,
-  authFetch, updateJobCard, getJobCards,
+  authFetch, updateJobCard, getJobCard,
 } from "../services/api";
 import { API_BASE } from "../config";
 import { round2, calculateItemRow, calculateInvoiceTotals } from "../utils/invoiceCalc";
@@ -105,9 +105,8 @@ export default function NewRepairInvoice() {
   useEffect(() => {
     const jcId = searchParams.get("job_card_id");
     if (!jcId) return;
-    getJobCards().then((cards) => {
-      const found = cards.find((c) => String(c.id) === String(jcId));
-      if (found) attachJobCard(found);
+    getJobCard(jcId).then((card) => {
+      if (card) attachJobCard(card);
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -143,10 +142,18 @@ export default function NewRepairInvoice() {
     const descVal = card.issue_description
       ? `Repair: ${card.device_name} — ${card.issue_description}`
       : `Repair: ${card.device_name}`;
+    const isThirdPartyRepair = String(card.status || "").toUpperCase().includes("THIRD_PARTY");
+    const technicianCost = card.latest_repair_job_amount_charged_by_technician != null
+      ? Number(card.latest_repair_job_amount_charged_by_technician)
+      : null;
+    const prefilledRate = isThirdPartyRepair && technicianCost !== null
+      ? String(round2(technicianCost))
+      : "";
+
     setItems((prev) => {
       const empty = prev.length === 1 && !prev[0].description && !prev[0].rate;
-      if (empty) return [{ ...prev[0], description: descVal, serial_no: card.serial_number || "" }];
-      return [...prev, { ...EMPTY_ITEM, description: descVal, serial_no: card.serial_number || "" }];
+      if (empty) return [{ ...prev[0], description: descVal, serial_no: card.serial_number || "", rate: prefilledRate }];
+      return [...prev, { ...EMPTY_ITEM, description: descVal, serial_no: card.serial_number || "", rate: prefilledRate }];
     });
     if (!form.customer_id) {
       const matched = customers.find((c) => c.name.toLowerCase() === card.customer_name.toLowerCase());
@@ -254,8 +261,14 @@ export default function NewRepairInvoice() {
       });
       setCreatedInvoice(inv);
       if (linkedJobCardId) {
-        try { await updateJobCard(linkedJobCardId, { linked_sales_invoice_id: inv.id }); }
-        catch (jcErr) { console.warn("Failed to link job card:", jcErr); }
+        try {
+          await updateJobCard(linkedJobCardId, {
+            linked_sales_invoice_id: inv.id,
+            status: "READY_FOR_PICKUP",
+          });
+        } catch (jcErr) {
+          console.warn("Failed to link job card:", jcErr);
+        }
       }
     } catch (err) { setError(err.response?.data?.detail || "Failed to create invoice. Check all required fields."); }
     finally       { setSubmitting(false); }
