@@ -143,6 +143,7 @@ def lookup_serial(serial_number: str, db: Session = Depends(get_db)):
         description      = si.description if si else None,
         final_unit_price = final_unit_price,
         status           = unit.status,
+        latest_price     = ri,
     )
 
 

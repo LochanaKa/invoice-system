@@ -13,19 +13,30 @@ import {
   getSettings,
 } from "../services/api";
 
-const EMPTY_ITEM = {
+// EMPTY_ITEM is a function so addItem() can inject the live default margin
+// at call time rather than capturing it at module load.
+const makeEmptyItem = (defaultMarginPct = 20) => ({
   stock_item_id: "",
   qty: 1,
   unit_cost: "",
-  operation_cost_type: "percentage",
-  operation_cost_value: "0",
+  // ── Profit Margin (UI column 1) ─────────────────────────────────────────
+  // Shown separately from OP Cost in the table. Defaults to Settings.profit_margin.
+  profit_margin_type:  "percentage",
+  profit_margin_value: String(defaultMarginPct),
+  // ── OP Cost (UI column 2) ──────────────────────────────────────────────
+  // Optional extra fixed/percentage cost (handling, shipping, overhead).
+  op_cost_type:  "fixed",
+  op_cost_value: "0",
   // UI helpers
   searchQuery: "",
   isSearchOpen: false,
   requires_serial: false,
   brand: "",
   model: "",
-};
+});
+
+// Compatibility alias — replaced by makeEmptyItem() calls throughout.
+const EMPTY_ITEM = makeEmptyItem();
 
 const round2 = (n) => Math.round(Number(n) * 100) / 100;
 
@@ -37,7 +48,7 @@ export default function NewStockReceipt() {
   const [receivedDate, setReceivedDate] = useState(new Date().toISOString().split("T")[0]);
   const [referenceNo,  setReferenceNo]  = useState("");
   const [notes,        setNotes]        = useState("");
-  const [items,        setItems]        = useState([{ ...EMPTY_ITEM }]);
+  const [items,        setItems]        = useState([makeEmptyItem(20)]);
 
   // Lists & Lookups
   const [suppliers,    setSuppliers]    = useState([]);
@@ -47,8 +58,9 @@ export default function NewStockReceipt() {
   const [selectedRep,  setSelectedRep]  = useState("");
 
   // Global defaults
-  const [ssclPct,      setSsclPct]      = useState(0.025);
-  const [vatPct,       setVatPct]       = useState(0.18);
+  const [ssclPct,          setSsclPct]          = useState(0.025);
+  const [vatPct,           setVatPct]           = useState(0.18);
+  const [defaultMarginPct, setDefaultMarginPct] = useState(20); // e.g. 20 for 20%
 
   // Statuses
   const [loading,      setLoading]      = useState(true);
@@ -99,11 +111,16 @@ export default function NewStockReceipt() {
       const categoriesList = await getStockCategories();
       setCategories(categoriesList);
 
-      // Get defaults
+      // Get defaults — profit_margin from Settings is stored as a 0–1 decimal (e.g. 0.20)
       const settings = await getSettings().catch(() => null);
       if (settings) {
         setSsclPct(Number(settings.sscl_pct || 0.025));
         setVatPct(Number(settings.vat_pct || 0.18));
+        // Convert 0–1 decimal to display percentage (0.20 → 20)
+        const marginPct = Math.round(Number(settings.profit_margin || 0.20) * 100 * 100) / 100;
+        setDefaultMarginPct(marginPct);
+        // Seed the first blank row with the real default now that we know it
+        setItems([makeEmptyItem(marginPct)]);
       }
     } catch (e) {
       console.error("Failed to load receipt form requirements", e);
@@ -121,23 +138,44 @@ export default function NewStockReceipt() {
   }
 
   // ── Live Cost Calculations per Line ────────────────────────────────────────
+  // Chain: unit_cost → +margin → +op_cost → subtotal_after_opcost → +SSCL → +VAT
   const calculateLineCost = (it) => {
     const cost = Number(it.unit_cost) || 0;
-    const val = Number(it.operation_cost_value) || 0;
-    let opCostAmount = 0;
-    if (it.operation_cost_type === "percentage") {
-      opCostAmount = round2(cost * (val / 100));
+
+    // Step 1 — Profit Margin
+    const mVal = Number(it.profit_margin_value) || 0;
+    let marginAmount = 0;
+    if (it.profit_margin_type === "percentage") {
+      marginAmount = round2(cost * (mVal / 100));
     } else {
-      opCostAmount = round2(val);
+      marginAmount = round2(mVal);
     }
-    const afterOp = round2(cost + opCostAmount);
-    const ssclAmt = round2(afterOp * ssclPct);
+
+    // Step 2 — OP Cost (extra handling / shipping / overhead)
+    const oVal = Number(it.op_cost_value) || 0;
+    let opCostAmount = 0;
+    if (it.op_cost_type === "percentage") {
+      opCostAmount = round2(cost * (oVal / 100));
+    } else {
+      opCostAmount = round2(oVal);
+    }
+
+    // Combined add-on
+    const totalAddOn = round2(marginAmount + opCostAmount);
+    const afterOp    = round2(cost + totalAddOn);
+
+    // Step 3 — SSCL
+    const ssclAmt  = round2(afterOp * ssclPct);
     const afterSscl = round2(afterOp + ssclAmt);
-    const vatAmt = round2(afterSscl * vatPct);
+
+    // Step 4 — VAT
+    const vatAmt    = round2(afterSscl * vatPct);
     const finalPrice = round2(afterSscl + vatAmt);
 
     return {
+      marginAmount,
       opCostAmount,
+      totalAddOn,
       afterOp,
       ssclAmt,
       vatAmt,
@@ -170,7 +208,9 @@ export default function NewStockReceipt() {
   }
 
   function addItem() {
-    setItems((prev) => [...prev, { ...EMPTY_ITEM }]);
+    // Always inject the live default margin so new rows use whatever
+    // Settings.profit_margin is at the moment the row is added.
+    setItems((prev) => [...prev, makeEmptyItem(defaultMarginPct)]);
   }
 
   function removeItem(index) {
@@ -263,13 +303,19 @@ export default function NewStockReceipt() {
         reference_no: referenceNo.trim() || null,
         notes: notes.trim() || null,
         received_by_rep_id: selectedRep ? Number(selectedRep) : null,
-        items: validLines.map(it => ({
-          stock_item_id: Number(it.stock_item_id),
-          qty: Number(it.qty),
-          unit_cost: Number(it.unit_cost),
-          operation_cost_type: it.operation_cost_type,
-          operation_cost_value: Number(it.operation_cost_value),
-        })),
+        items: validLines.map(it => {
+          // Combine margin + op cost into a single fixed-Rs value for the backend.
+          // The backend schema has one operation_cost_type/value slot; we send
+          // the pre-computed total add-on as a fixed amount so the math is lossless.
+          const calc = calculateLineCost(it);
+          return {
+            stock_item_id:        Number(it.stock_item_id),
+            qty:                  Number(it.qty),
+            unit_cost:            Number(it.unit_cost),
+            operation_cost_type:  "fixed",
+            operation_cost_value: calc.totalAddOn,
+          };
+        }),
       };
 
       const result = await createStockReceipt(payload);
@@ -362,12 +408,14 @@ export default function NewStockReceipt() {
   }
 
   // ── Totals breakdown live summary ──────────────────────────────────────────
-  const receiptSubtotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unit_cost) || 0), 0);
-  const calculations = items.map(calculateLineCost);
-  const totalOpCost = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].opCostAmount, 0);
-  const totalSscl = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].ssclAmt, 0);
-  const totalVat = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].vatAmt, 0);
-  const grandTotal = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].finalPrice, 0);
+  const receiptSubtotal  = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unit_cost) || 0), 0);
+  const calculations     = items.map(calculateLineCost);
+  const totalMargin      = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].marginAmount, 0);
+  const totalOpCost      = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].opCostAmount, 0);
+  const totalAddOn       = round2(totalMargin + totalOpCost);
+  const totalSscl        = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].ssclAmt, 0);
+  const totalVat         = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].vatAmt, 0);
+  const grandTotal       = items.reduce((s, it, idx) => s + (Number(it.qty) || 0) * calculations[idx].finalPrice, 0);
 
   const fmt = (n) => Number(n || 0).toLocaleString("en-LK", {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -633,7 +681,14 @@ export default function NewStockReceipt() {
                   <th className="text-left px-4 py-2">PRODUCT MODEL</th>
                   <th className="text-center px-4 py-2 w-16">QTY</th>
                   <th className="text-right px-4 py-2 w-28">UNIT COST (Rs.)</th>
-                  <th className="text-center px-4 py-2 w-48">OP COST BASIS</th>
+                  <th className="text-center px-4 py-2 w-36">
+                    PROFIT MARGIN
+                    <div className="text-[10px] font-normal text-gray-400 mt-0.5">default: {defaultMarginPct}%</div>
+                  </th>
+                  <th className="text-center px-4 py-2 w-32">
+                    OP COST
+                    <div className="text-[10px] font-normal text-gray-400 mt-0.5">handling / shipping</div>
+                  </th>
                   <th className="text-right px-4 py-2 w-40">LINE TOTAL (FINAL)</th>
                   <th className="w-8"></th>
                 </tr>
@@ -726,26 +781,56 @@ export default function NewStockReceipt() {
                         />
                       </td>
 
-                      {/* Op Cost Type & Value */}
+                      {/* Profit Margin column */}
                       <td className="px-4 py-2">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1">
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            value={item.operation_cost_value}
-                            onChange={(e) => updateItemField(idx, "operation_cost_value", e.target.value)}
-                            className="w-16 border-0 border-b border-gray-200 py-1 text-sm focus:outline-none text-right bg-transparent"
+                            value={item.profit_margin_value}
+                            onChange={(e) => updateItemField(idx, "profit_margin_value", e.target.value)}
+                            className="w-14 border-0 border-b border-blue-200 py-1 text-sm focus:outline-none text-right bg-transparent text-blue-700 font-medium"
                           />
                           <select
-                            value={item.operation_cost_type}
-                            onChange={(e) => updateItemField(idx, "operation_cost_type", e.target.value)}
-                            className="text-xs border-none bg-transparent py-1 text-gray-500 focus:outline-none"
+                            value={item.profit_margin_type}
+                            onChange={(e) => updateItemField(idx, "profit_margin_type", e.target.value)}
+                            className="text-xs border-none bg-transparent py-1 text-blue-500 focus:outline-none"
                           >
                             <option value="percentage">%</option>
                             <option value="fixed">Rs.</option>
                           </select>
                         </div>
+                        <div className="text-[10px] text-gray-400 text-right mt-0.5">
+                          +Rs. {fmt(calc.marginAmount)}
+                        </div>
+                      </td>
+
+                      {/* OP Cost column */}
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.op_cost_value}
+                            onChange={(e) => updateItemField(idx, "op_cost_value", e.target.value)}
+                            className="w-14 border-0 border-b border-gray-200 py-1 text-sm focus:outline-none text-right bg-transparent"
+                          />
+                          <select
+                            value={item.op_cost_type}
+                            onChange={(e) => updateItemField(idx, "op_cost_type", e.target.value)}
+                            className="text-xs border-none bg-transparent py-1 text-gray-500 focus:outline-none"
+                          >
+                            <option value="fixed">Rs.</option>
+                            <option value="percentage">%</option>
+                          </select>
+                        </div>
+                        {calc.opCostAmount > 0 && (
+                          <div className="text-[10px] text-gray-400 text-right mt-0.5">
+                            +Rs. {fmt(calc.opCostAmount)}
+                          </div>
+                        )}
                       </td>
 
                       {/* Live Breakdown Output */}
@@ -755,8 +840,11 @@ export default function NewStockReceipt() {
                         </div>
                         <div className="text-[10px] text-gray-400 mt-0.5">
                           Unit: Rs. {fmt(calc.finalPrice)}
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          After op: Rs. {fmt(calc.afterOp)}
                           <span className="mx-1">·</span>
-                          Op: {item.operation_cost_type === "percentage" ? `${item.operation_cost_value}%` : `Rs.${item.operation_cost_value}`} (Rs.{fmt(calc.opCostAmount)})
+                          SSCL+VAT: Rs. {fmt(round2(calc.ssclAmt + calc.vatAmt))}
                         </div>
                       </td>
 
@@ -784,7 +872,11 @@ export default function NewStockReceipt() {
                 <span>Rs. {fmt(receiptSubtotal)}</span>
               </div>
               <div className="flex justify-between text-gray-500 text-xs">
-                <span>Total Operation Cost Add-on</span>
+                <span>Profit Margin Add-on</span>
+                <span>Rs. {fmt(totalMargin)}</span>
+              </div>
+              <div className="flex justify-between text-gray-500 text-xs">
+                <span>OP Cost Add-on (handling/shipping)</span>
                 <span>Rs. {fmt(totalOpCost)}</span>
               </div>
               <div className="flex justify-between text-amber-600 text-xs">

@@ -604,21 +604,6 @@ class StockItemUpdate(BaseModel):
     is_active:       Optional[bool] = None
 
 
-class StockItemOut(BaseModel):
-    id:              int
-    category_id:     int
-    category_name:   Optional[str] = None   # joined from stock_categories — same pattern as CustomerOut.route_name
-    brand:           Optional[str] = None
-    model:           str
-    description:     Optional[str] = None
-    requires_serial: bool
-    qty_on_hand:     int
-    reorder_level:   Optional[int] = None
-    is_active:       bool
-    created_at:      Optional[datetime] = None
-    model_config = {"from_attributes": True}
-
-
 # StockReceiptItem — input carries only the user-entered fields;
 # all computed amounts (operation_cost_amount, subtotal_after_opcost, sscl_amount,
 # vat_amount, final_unit_price) are derived server-side at save time.
@@ -651,6 +636,23 @@ class StockReceiptItemOut(BaseModel):
 
     created_at:             Optional[datetime] = None
     model_config = {"from_attributes": True}
+
+
+class StockItemOut(BaseModel):
+    id:              int
+    category_id:     int
+    category_name:   Optional[str] = None   # joined from stock_categories — same pattern as CustomerOut.route_name
+    brand:           Optional[str] = None
+    model:           str
+    description:     Optional[str] = None
+    requires_serial: bool
+    qty_on_hand:     int
+    reorder_level:   Optional[int] = None
+    is_active:       bool
+    created_at:      Optional[datetime] = None
+    latest_price:    Optional[StockReceiptItemOut] = None
+    model_config = {"from_attributes": True}
+
 
 
 class StockReceiptCreate(BaseModel):
@@ -704,4 +706,5 @@ class StockUnitLookupOut(BaseModel):
     description:     Optional[str] = None
     final_unit_price: Decimal
     status:          str
+    latest_price:    Optional[StockReceiptItemOut] = None
     model_config = {"from_attributes": True}

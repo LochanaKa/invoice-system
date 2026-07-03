@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { Search, RefreshCw, Pencil, Trash2, X, AlertTriangle, Package, Plus, RotateCcw } from "lucide-react";
 import {
   getStockItems,
@@ -23,6 +23,17 @@ export default function StockItems() {
   const [isDeleting,   setIsDeleting]   = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating,   setIsCreating]   = useState(false);
+
+  // Pricing expanded rows state
+  const [expandedItems, setExpandedItems] = useState({});
+
+  const toggleExpand = (itemId) => {
+    setExpandedItems(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId]
+    }));
+  };
+
 
   // Edit fields
   const [editCategoryId,     setEditCategoryId]     = useState("");
@@ -297,95 +308,145 @@ export default function StockItems() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((i, idx) => (
-                  <tr key={i.id}
-                      className="transition-colors"
-                      style={{
-                        borderBottom: "1px solid #f0f4ff",
-                        background: !i.is_active
-                          ? "#fafafa"
-                          : idx % 2 === 0 ? "#ffffff" : "#fafbff",
-                      }}
-                      onMouseEnter={(e) => i.is_active && (e.currentTarget.style.background = "#eef1fb")}
-                      onMouseLeave={(e) => e.currentTarget.style.background = !i.is_active
-                        ? "#fafafa" : idx % 2 === 0 ? "#ffffff" : "#fafbff"}>
-
-                    <td className={`px-4 py-3 text-gray-700 text-xs ${i.is_active ? "" : "text-gray-400 line-through"}`}>
-                      {i.brand || "—"}
-                    </td>
-                    <td className={`px-4 py-3 font-semibold ${i.is_active ? "" : "text-gray-400 line-through"}`}
-                        style={i.is_active ? { color: "#1F3C8A" } : {}}>
-                      {i.model}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{i.category_name || "—"}</td>
-
-                    {/* Qty on Hand Badge */}
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center text-xs px-2.5 py-0.5 border rounded-full ${getQtyClass(i)}`}>
-                        {i.qty_on_hand}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3 text-gray-500 text-xs">{i.reorder_level !== null ? i.reorder_level : "—"}</td>
-
-                    {/* Serialized Badge */}
-                    <td className="px-4 py-3">
-                      {i.requires_serial ? (
-                        <span className="text-xs font-semibold bg-purple-50 text-purple-700 px-2.5 py-0.5 rounded-full border border-purple-100">
-                          Yes
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">Bulk (No)</span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {i.is_active ? (
-                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full"
-                              style={{ background: "#e9f7ef", color: "#27AE60" }}>
-                          Active
-                        </span>
-                      ) : (
-                        <span className="text-xs font-semibold bg-gray-100 text-gray-400 px-2.5 py-0.5 rounded-full">
-                          Inactive
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {i.is_active ? (
-                          <>
+                {items.map((i, idx) => {
+                  const isExpanded = expandedItems[i.id];
+                  const lp = i.latest_price;
+                  return (
+                    <Fragment key={i.id}>
+                      <tr
+                        className="transition-colors"
+                        style={{
+                          borderBottom: "1px solid #f0f4ff",
+                          background: !i.is_active
+                            ? "#fafafa"
+                            : idx % 2 === 0 ? "#ffffff" : "#fafbff",
+                        }}
+                        onMouseEnter={(e) => i.is_active && (e.currentTarget.style.background = "#eef1fb")}
+                        onMouseLeave={(e) => e.currentTarget.style.background = !i.is_active
+                          ? "#fafafa" : idx % 2 === 0 ? "#ffffff" : "#fafbff"}
+                      >
+                        <td className={`px-4 py-3 text-gray-700 text-xs ${i.is_active ? "" : "text-gray-400 line-through"}`}>
+                          {i.brand || "—"}
+                        </td>
+                        <td className={`px-4 py-3 font-semibold ${i.is_active ? "" : "text-gray-400 line-through"}`}
+                            style={i.is_active ? { color: "#1F3C8A" } : {}}>
+                          <div>{i.model}</div>
+                          {lp ? (
                             <button
-                              onClick={() => openEditModal(i)}
-                              className="p-1.5 rounded-lg hover:bg-cc-blue-50 transition-colors"
-                              style={{ color: "#1F3C8A" }}
-                              title="Edit Item"
+                              type="button"
+                              onClick={() => toggleExpand(i.id)}
+                              className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5 mt-1 font-normal transition"
                             >
-                              <Pencil size={14} />
+                              <span>Price: Rs. {Number(lp.final_unit_price).toLocaleString("en-LK", { minimumFractionDigits: 2 })}</span>
+                              <span className="text-[9px] text-gray-400">({isExpanded ? "hide details" : "view details"})</span>
                             </button>
-                            <button
-                              onClick={() => setDeleteTarget(i)}
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
-                              title="Deactivate Item"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            onClick={() => handleReactivate(i.id)}
-                            className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors hover:bg-cc-green-50"
-                            style={{ color: "#27AE60" }}
-                            title="Reactivate Item"
-                          >
-                            <RotateCcw size={13} /> Reactivate
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          ) : (
+                            <span className="text-[11px] text-gray-400 block mt-1 font-normal">No pricing yet</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{i.category_name || "—"}</td>
+
+                        {/* Qty on Hand Badge */}
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center text-xs px-2.5 py-0.5 border rounded-full ${getQtyClass(i)}`}>
+                            {i.qty_on_hand}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3 text-gray-500 text-xs">{i.reorder_level !== null ? i.reorder_level : "—"}</td>
+
+                        {/* Serialized Badge */}
+                        <td className="px-4 py-3">
+                          {i.requires_serial ? (
+                            <span className="text-xs font-semibold bg-purple-50 text-purple-700 px-2.5 py-0.5 rounded-full border border-purple-100">
+                              Yes
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">Bulk (No)</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {i.is_active ? (
+                            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full"
+                                  style={{ background: "#e9f7ef", color: "#27AE60" }}>
+                              Active
+                            </span>
+                          ) : (
+                            <span className="text-xs font-semibold bg-gray-100 text-gray-400 px-2.5 py-0.5 rounded-full">
+                              Inactive
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {i.is_active ? (
+                              <>
+                                <button
+                                  onClick={() => openEditModal(i)}
+                                  className="p-1.5 rounded-lg hover:bg-cc-blue-50 transition-colors"
+                                  style={{ color: "#1F3C8A" }}
+                                  title="Edit Item"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                                <button
+                                  onClick={() => setDeleteTarget(i)}
+                                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+                                  title="Deactivate Item"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => handleReactivate(i.id)}
+                                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors hover:bg-cc-green-50"
+                                style={{ color: "#27AE60" }}
+                                title="Reactivate Item"
+                              >
+                                <RotateCcw size={13} /> Reactivate
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && lp && (
+                        <tr style={{ background: "#f8faff" }}>
+                          <td colSpan={8} className="px-6 py-4">
+                            <div className="bg-blue-50/40 p-4 rounded-xl border border-blue-100 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 text-xs shadow-inner">
+                              <div>
+                                <span className="text-gray-500 block mb-0.5">Unit Cost</span>
+                                <span className="font-semibold text-gray-800 text-sm">Rs. {Number(lp.unit_cost).toLocaleString("en-LK", { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 block mb-0.5">Markup &amp; OP Cost</span>
+                                <span className="font-semibold text-gray-800 text-sm">Rs. {Number(lp.operation_cost_amount).toLocaleString("en-LK", { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 block mb-0.5">Landed Cost</span>
+                                <span className="font-semibold text-gray-800 text-sm">Rs. {Number(lp.subtotal_after_opcost).toLocaleString("en-LK", { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 block mb-0.5">SSCL ({Math.round(lp.sscl_pct * 1000) / 10}%)</span>
+                                <span className="font-semibold text-gray-800 text-sm">Rs. {Number(lp.sscl_amount).toLocaleString("en-LK", { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 block mb-0.5">VAT ({Math.round(lp.vat_pct * 1000) / 10}%)</span>
+                                <span className="font-semibold text-gray-800 text-sm">Rs. {Number(lp.vat_amount).toLocaleString("en-LK", { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div>
+                                <span className="text-blue-700 block font-semibold mb-0.5">Suggested Price</span>
+                                <span className="font-bold text-blue-900 text-sm">Rs. {Number(lp.final_unit_price).toLocaleString("en-LK", { minimumFractionDigits: 2 })}</span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
 

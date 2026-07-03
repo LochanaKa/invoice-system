@@ -16,7 +16,9 @@ import { API_BASE } from "../config";
 import { round2, calculateItemRow, calculateInvoiceTotals } from "../utils/invoiceCalc";
 
 // stock_item_id + suggested_price track catalog-linked rows for price-drift warning
-const EMPTY_ITEM = { description: "", serial_no: "", qty: 1, rate: "", stock_item_id: null, suggested_price: null };
+// stock_price_chain: full StockReceiptItemOut for stock-linked lines (prevents price drift).
+// pricing_override: when true, staff can manually edit price even for stock-linked lines.
+const EMPTY_ITEM = { description: "", serial_no: "", qty: 1, rate: "", stock_item_id: null, suggested_price: null, stock_price_chain: null, pricing_override: false };
 
 const fmt = (n) => Number(n || 0).toLocaleString("en-LK", {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -251,6 +253,13 @@ export default function NewInvoice() {
     setItems((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // Toggle per-line pricing override (unlock stock-linked locked price for manual edit)
+  function togglePricingOverride(index) {
+    setItems((prev) => prev.map((item, i) =>
+      i === index ? { ...item, pricing_override: !item.pricing_override } : item
+    ));
+  }
+
   // ── Serial scan handler ───────────────────────────────────────────────────
   // Called on Enter in the scan input. Looks up the serial via
   // GET /stock-units/lookup/{serial}, then appends a new row.
@@ -280,12 +289,16 @@ export default function NewInvoice() {
         ...prev.filter((it) => it.description || it.rate), // drop any trailing empty row first
         {
           ...EMPTY_ITEM,
-          description:    desc,
-          serial_no:      unit.serial_number,
-          qty:            1,
-          rate:           String(unit.final_unit_price ?? ""),
-          stock_item_id:  unit.stock_item_id,
-          suggested_price: unit.final_unit_price,
+          description:       desc,
+          serial_no:         unit.serial_number,
+          qty:               1,
+          // Use unit_cost as the raw rate — the backend adds margin/SSCL/VAT from global rates.
+          // This prevents the backend from double-applying taxes on an already-margined price.
+          rate:              String(unit.latest_price?.unit_cost ?? unit.final_unit_price ?? ""),
+          stock_item_id:     unit.stock_item_id,
+          suggested_price:   unit.final_unit_price,
+          stock_price_chain: unit.latest_price ?? null,
+          pricing_override:  false,
         },
       ]);
 
@@ -336,15 +349,18 @@ export default function NewInvoice() {
     const desc = [pendingStockItem.brand, pendingStockItem.model]
       .filter(Boolean).join(" ") || pendingStockItem.description || "";
 
+    const chain = pendingStockItem.latest_price ?? null;
     setItems((prev) => [
       ...prev.filter((it) => it.description || it.rate),
       {
         ...EMPTY_ITEM,
-        description:     desc,
-        qty:             qty,
-        rate:            String(pendingStockItem.final_unit_price ?? ""),
-        stock_item_id:   pendingStockItem.id,
-        suggested_price: pendingStockItem.final_unit_price,
+        description:       desc,
+        qty:               qty,
+        rate:              String(chain?.unit_cost ?? ""),
+        stock_item_id:     pendingStockItem.id,
+        suggested_price:   chain?.final_unit_price ?? null,
+        stock_price_chain: chain,
+        pricing_override:  false,
       },
     ]);
     setPendingStockItem(null);
@@ -358,8 +374,34 @@ export default function NewInvoice() {
   const vatPct    = (Number(rates.vat_pct)            || 0) / 100;
   const category  = form.invoice_category;
 
+  // For locked stock-linked lines: use the stored receipt chain values directly.
+  // This keeps the UI totals in sync with the recorded receiving-time price without re-calculating.
+  function calcFromChain(item) {
+    const ch  = item.stock_price_chain;
+    const qty = Number(item.qty) || 1;
+    if (category === "ALL_INC") {
+      return {
+        rawAmount:     round2(qty * Number(ch.unit_cost)),
+        profitAmt:     round2(qty * Number(ch.operation_cost_amount)),
+        ssclAmt:       round2(qty * Number(ch.sscl_amount)),
+        vatAmt:        round2(qty * Number(ch.vat_amount)),
+        displayAmount: round2(qty * Number(ch.final_unit_price)),
+      };
+    }
+    // VAT mode: taxes are applied at invoice level, not per-line
+    return {
+      rawAmount:     round2(qty * Number(ch.unit_cost)),
+      profitAmt:     round2(qty * Number(ch.operation_cost_amount)),
+      ssclAmt:       0,
+      vatAmt:        0,
+      displayAmount: round2(qty * Number(ch.subtotal_after_opcost)),
+    };
+  }
+
   const lineCalcs = items.map((item) =>
-    calculateItemRow(item, category, marginPct, ssclPct, vatPct)
+    (item.stock_price_chain && !item.pricing_override)
+      ? calcFromChain(item)
+      : calculateItemRow(item, category, marginPct, ssclPct, vatPct)
   );
 
   const {
@@ -372,6 +414,8 @@ export default function NewInvoice() {
   // Returns list of items where rate was manually edited away from the
   // catalog-suggested price (non-blocking — just warns staff).
   const priceDriftItems = items.filter((it) => {
+    // Locked stock-linked lines are read-only — they can't drift
+    if (it.stock_price_chain && !it.pricing_override) return false;
     if (it.suggested_price == null) return false;
     const suggested = parseFloat(it.suggested_price);
     const entered   = parseFloat(it.rate);
@@ -428,7 +472,11 @@ export default function NewInvoice() {
           serial_no:     it.serial_no     || null,
           stock_item_id: it.stock_item_id || null,
           qty:           parseInt(it.qty)   || 1,
-          rate:          parseFloat(it.rate) || 0,
+          // For locked stock-linked lines: send unit_cost as the raw rate so the backend
+          // computes margin+SSCL+VAT on top of it — not on top of an already-marked-up price.
+          rate: (it.stock_price_chain && !it.pricing_override)
+            ? parseFloat(it.stock_price_chain.unit_cost) || 0
+            : parseFloat(it.rate) || 0,
         })),
         route_id: form.route_id ? parseInt(form.route_id) : null,
       };
@@ -714,10 +762,16 @@ export default function NewInvoice() {
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-400 mb-4 flex items-center gap-1">
+          <p className="text-xs text-gray-400 mb-3 flex items-center gap-1">
             <Info size={12} />
-            Override per-invoice if needed. These rates are locked into the invoice on save.
+            Override per-invoice if needed. These rates apply to <strong>free-text</strong> lines — stock-linked lines use their receiving-time pricing.
           </p>
+          {items.some(it => it.stock_price_chain && !it.pricing_override) && (
+            <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4 flex items-center gap-1.5">
+              <Package size={12} className="shrink-0" />
+              {items.filter(it => it.stock_price_chain && !it.pricing_override).length} stock-linked line(s) on this invoice — their margin/SSCL/VAT come from the receiving record, not from these rate fields.
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-4">
             {/* Profit Margin */}
@@ -924,7 +978,7 @@ export default function NewInvoice() {
           {/* ── Table header + Add button ───────────────────────────────── */}
           <div className="px-5 py-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
             <p className="text-xs text-gray-400">
-              Enter raw cost — margin{isVAT ? "" : ", SSCL, and VAT"} are rolled into the customer-facing amount.
+              For free-text lines: enter raw cost — margin{isVAT ? "" : ", SSCL, and VAT"} roll in. Stock-linked lines auto-lock to their receipt pricing.
             </p>
             <button type="button" onClick={addItem}
                     className="flex items-center gap-1.5 text-xs text-blue-600
@@ -984,24 +1038,65 @@ export default function NewInvoice() {
                         />
                       </td>
                       <td className="px-4 py-2">
-                        <input
-                          type="number" min="0" step="0.01" value={item.rate}
-                          onChange={(e) => updateItem(i, "rate", e.target.value)}
-                          placeholder="0.00"
-                          className={`w-full border-0 py-1 text-sm focus:outline-none bg-transparent text-right
-                            ${item.suggested_price != null && Math.abs(parseFloat(item.suggested_price) - parseFloat(item.rate || 0)) > 0.01
-                              ? "border-b border-amber-400 text-amber-700"
-                              : "border-b border-gray-200 focus:border-blue-500"}`}
-                        />
-                        {item.suggested_price != null && Math.abs(parseFloat(item.suggested_price) - parseFloat(item.rate || 0)) > 0.01 && (
-                          <p className="text-[10px] text-amber-500 text-right mt-0.5">
-                            suggested: Rs. {fmt(item.suggested_price)}
-                          </p>
-                        )}
-                        {rawAmt > 0 && (
-                          <p className="text-[10px] text-gray-300 text-right mt-0.5">
-                            raw: Rs. {fmt(rawAmt)}
-                          </p>
+                        {(item.stock_price_chain && !item.pricing_override) ? (
+                          /* ── Locked stock pricing panel ── */
+                          <div>
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="text-sm font-medium text-gray-700">
+                                Rs. {fmt(Number(item.stock_price_chain.unit_cost))}
+                              </span>
+                              <span className="text-[10px] text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                🔒 stock
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-gray-400 text-right mt-1 space-y-0.5 leading-4">
+                              <div>margin/op: +Rs. {fmt(Number(item.stock_price_chain.operation_cost_amount))}</div>
+                              <div>SSCL: +Rs. {fmt(Number(item.stock_price_chain.sscl_amount))}</div>
+                              <div>VAT: +Rs. {fmt(Number(item.stock_price_chain.vat_amount))}</div>
+                              <div className="text-blue-600 font-semibold border-t border-blue-100 pt-0.5">
+                                = Rs. {fmt(Number(item.stock_price_chain.final_unit_price))} / unit
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => togglePricingOverride(i)}
+                              className="text-[10px] text-amber-500 hover:text-amber-700 hover:underline mt-1 block text-right w-full"
+                            >
+                              Override pricing
+                            </button>
+                          </div>
+                        ) : (
+                          /* ── Manual / overridden entry ── */
+                          <div>
+                            <input
+                              type="number" min="0" step="0.01" value={item.rate}
+                              onChange={(e) => updateItem(i, "rate", e.target.value)}
+                              placeholder="0.00"
+                              className={`w-full border-0 py-1 text-sm focus:outline-none bg-transparent text-right
+                                ${item.suggested_price != null && Math.abs(parseFloat(item.suggested_price) - parseFloat(item.rate || 0)) > 0.01
+                                  ? "border-b border-amber-400 text-amber-700"
+                                  : "border-b border-gray-200 focus:border-blue-500"}`}
+                            />
+                            {item.suggested_price != null && Math.abs(parseFloat(item.suggested_price) - parseFloat(item.rate || 0)) > 0.01 && (
+                              <p className="text-[10px] text-amber-500 text-right mt-0.5">
+                                suggested: Rs. {fmt(item.suggested_price)}
+                              </p>
+                            )}
+                            {rawAmt > 0 && (
+                              <p className="text-[10px] text-gray-300 text-right mt-0.5">
+                                raw: Rs. {fmt(rawAmt)}
+                              </p>
+                            )}
+                            {item.stock_price_chain && (
+                              <button
+                                type="button"
+                                onClick={() => togglePricingOverride(i)}
+                                className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline block text-right w-full mt-0.5"
+                              >
+                                ↩ Restore stock pricing
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-2 text-right font-medium text-gray-700">

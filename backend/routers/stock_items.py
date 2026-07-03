@@ -10,17 +10,18 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 
+from sqlalchemy import desc
 from database import get_db
-from models import StockItem, StockCategory
-from schemas import StockItemCreate, StockItemUpdate, StockItemOut
+from models import StockItem, StockCategory, StockReceiptItem, StockReceipt
+from schemas import StockItemCreate, StockItemUpdate, StockItemOut, StockReceiptItemOut
 
 router = APIRouter(prefix="/stock-items", tags=["Stock Items"])
 
 
-# ── helper ───────────────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
 
-def _to_out(item: StockItem) -> StockItemOut:
-    """Convert a StockItem ORM row (with category eagerly loaded) to StockItemOut."""
+def _to_out(item: StockItem, latest_price: Optional[StockReceiptItem] = None) -> StockItemOut:
+    """Convert a StockItem ORM row (with category eagerly loaded) to StockItemOut, including latest_price."""
     return StockItemOut(
         id              = item.id,
         category_id     = item.category_id,
@@ -33,14 +34,31 @@ def _to_out(item: StockItem) -> StockItemOut:
         reorder_level   = item.reorder_level,
         is_active       = item.is_active,
         created_at      = item.created_at,
+        latest_price    = StockReceiptItemOut.model_validate(latest_price) if latest_price else None
     )
 
 
-def _fetch_with_category(db: Session, item_id: int) -> StockItem | None:
-    """Fetch one StockItem with its category eagerly loaded."""
+def _fetch_with_latest_price(db: Session, item_id: int):
+    """Fetch one StockItem with its category and latest receipt price."""
+    latest_receipt_items_sub = (
+        db.query(
+            StockReceiptItem.stock_item_id,
+            StockReceiptItem.id.label("receipt_item_id")
+        )
+        .join(StockReceipt, StockReceipt.id == StockReceiptItem.receipt_id)
+        .distinct(StockReceiptItem.stock_item_id)
+        .order_by(
+            StockReceiptItem.stock_item_id,
+            desc(StockReceipt.received_date),
+            desc(StockReceiptItem.id)
+        )
+        .subquery()
+    )
     return (
-        db.query(StockItem)
+        db.query(StockItem, StockReceiptItem)
         .options(joinedload(StockItem.category))
+        .outerjoin(latest_receipt_items_sub, latest_receipt_items_sub.c.stock_item_id == StockItem.id)
+        .outerjoin(StockReceiptItem, StockReceiptItem.id == latest_receipt_items_sub.c.receipt_item_id)
         .filter(StockItem.id == item_id)
         .first()
     )
@@ -57,10 +75,29 @@ def list_stock_items(
 ):
     """Return catalog items, optionally filtered by category, search term, and active status.
 
-    Response includes qty_on_hand and category_name (joined from stock_categories),
-    mirroring the pattern used in list_customers() which joins route_name.
+    Response includes qty_on_hand, category_name, and latest_price.
     """
-    q = db.query(StockItem).options(joinedload(StockItem.category))
+    latest_receipt_items_sub = (
+        db.query(
+            StockReceiptItem.stock_item_id,
+            StockReceiptItem.id.label("receipt_item_id")
+        )
+        .join(StockReceipt, StockReceipt.id == StockReceiptItem.receipt_id)
+        .distinct(StockReceiptItem.stock_item_id)
+        .order_by(
+            StockReceiptItem.stock_item_id,
+            desc(StockReceipt.received_date),
+            desc(StockReceiptItem.id)
+        )
+        .subquery()
+    )
+
+    q = (
+        db.query(StockItem, StockReceiptItem)
+        .options(joinedload(StockItem.category))
+        .outerjoin(latest_receipt_items_sub, latest_receipt_items_sub.c.stock_item_id == StockItem.id)
+        .outerjoin(StockReceiptItem, StockReceiptItem.id == latest_receipt_items_sub.c.receipt_item_id)
+    )
 
     if not show_inactive:
         q = q.filter(StockItem.is_active == True)
@@ -75,7 +112,7 @@ def list_stock_items(
         )
 
     items = q.order_by(StockItem.model).all()
-    return [_to_out(i) for i in items]
+    return [_to_out(item, receipt_item) for item, receipt_item in items]
 
 
 # ── get one ──────────────────────────────────────────────────────────────────
@@ -83,10 +120,11 @@ def list_stock_items(
 @router.get("/{item_id}", response_model=StockItemOut)
 def get_stock_item(item_id: int, db: Session = Depends(get_db)):
     """Return a single catalog item by ID."""
-    item = _fetch_with_category(db, item_id)
-    if not item:
+    res = _fetch_with_latest_price(db, item_id)
+    if not res:
         raise HTTPException(status_code=404, detail="Stock item not found")
-    return _to_out(item)
+    item, latest_price = res
+    return _to_out(item, latest_price)
 
 
 # ── create ───────────────────────────────────────────────────────────────────
@@ -108,9 +146,11 @@ def create_stock_item(payload: StockItemCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="A stock item with these details already exists.")
 
     db.refresh(item)
-    # Re-fetch with category join so category_name is populated in the response
-    item = _fetch_with_category(db, item.id)
-    return _to_out(item)
+    res = _fetch_with_latest_price(db, item.id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Stock item not found after creation")
+    item, latest_price = res
+    return _to_out(item, latest_price)
 
 
 # ── update ───────────────────────────────────────────────────────────────────
@@ -122,7 +162,7 @@ def update_stock_item(
     db: Session = Depends(get_db),
 ):
     """Partial update of a catalog item (e.g. adjust reorder_level, rename model)."""
-    item = _fetch_with_category(db, item_id)
+    item = db.query(StockItem).filter(StockItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Stock item not found")
 
@@ -146,9 +186,11 @@ def update_stock_item(
         db.rollback()
         raise HTTPException(status_code=409, detail="Update would create a duplicate stock item.")
 
-    # Re-fetch so the joined category reflects any category_id change
-    item = _fetch_with_category(db, item_id)
-    return _to_out(item)
+    res = _fetch_with_latest_price(db, item_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Stock item not found after update")
+    item, latest_price = res
+    return _to_out(item, latest_price)
 
 
 # ── soft-delete ──────────────────────────────────────────────────────────────
@@ -163,3 +205,4 @@ def delete_stock_item(item_id: int, db: Session = Depends(get_db)):
     item.is_active = False
     db.commit()
     return None
+
