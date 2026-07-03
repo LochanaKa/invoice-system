@@ -11,14 +11,15 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FileText, PlusCircle,
   Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, HardDrive, LogOut, KeyRound, ClipboardList,
-  Truck, Package
+  Truck, Package, ShoppingCart, Wrench
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
   { to: "/dashboard",          icon: LayoutDashboard, label: "Dashboard"        },
-  { to: "/invoices",           icon: FileText,        label: "Invoices"         },
-  { to: "/invoices/new",       icon: PlusCircle,      label: "New Invoice"      },
+  { to: "/invoices",           icon: FileText,      label: "Invoices"            },
+  { to: "/invoices/new",       icon: ShoppingCart,  label: "New Sale Invoice"    },
+  { to: "/invoices/new-repair",icon: Wrench,        label: "New Repair Invoice"  },
   { to: "/customers",          icon: Users,           label: "Customers"        },
   { to: "/staff",              icon: UserCog,         label: "Staff Management", adminOnly: true },
   { to: "/suppliers",          icon: Truck,           label: "Suppliers",        adminOnly: true },

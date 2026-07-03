@@ -15,7 +15,8 @@ import Login          from "./pages/Login";
 import ChangePassword from "./pages/ChangePassword";
 import Dashboard     from "./pages/Dashboard";
 import InvoiceList   from "./pages/InvoiceList";
-import NewInvoice    from "./pages/NewInvoice";
+import NewInvoice       from "./pages/NewInvoice";
+import NewRepairInvoice from "./pages/NewRepairInvoice";
 import InvoiceDetail from "./pages/InvoiceDetail";
 import Customers     from "./pages/Customers";
 import CustomerDetail from "./pages/CustomerDetail";
@@ -46,8 +47,9 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard"    element={<Dashboard />} />
           <Route path="invoices"     element={<InvoiceList />} />
-          <Route path="invoices/new" element={<NewInvoice />} />
-          <Route path="invoices/:id" element={<InvoiceDetail />} />
+          <Route path="invoices/new"        element={<NewInvoice />} />
+          <Route path="invoices/new-repair"  element={<NewRepairInvoice />} />
+          <Route path="invoices/:id"         element={<InvoiceDetail />} />
           <Route path="customers"    element={<Customers />} />
           <Route path="customers/:id" element={<CustomerDetail />} />
           <Route path="suppliers"    element={<Suppliers />} />

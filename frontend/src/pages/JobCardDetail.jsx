@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Save, ClipboardList } from "lucide-react";
+import { ArrowLeft, RefreshCw, Save, ClipboardList, FileText } from "lucide-react";
 import { getJobCard, updateJobCard, getReps } from "../services/api";
 
 const statusOptions = ["NEW", "IN_PROGRESS", "READY_FOR_PICKUP", "COMPLETED", "CANCELLED"];
@@ -105,17 +105,28 @@ export default function JobCardDetail() {
               {card.serial_number && (
                 <div className="mt-0.5 text-sm text-gray-500 font-mono">S/N: {card.serial_number}</div>
               )}
-              {card.linked_sales_invoice_id && card.linked_sales_invoice_number && (
+              {card.linked_sales_invoice_id ? (
+                /* Invoice already exists — show a view link */
                 <div className="mt-1.5">
                   <a
                     href={`/invoices/${card.linked_sales_invoice_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-2.5 py-0.5 text-xs font-semibold text-green-700 hover:bg-green-100 transition-colors"
                   >
                     <span className="size-1.5 rounded-full bg-green-500 inline-block"></span>
-                    Sold on Invoice #{card.linked_sales_invoice_number}
+                    Invoice {card.linked_sales_invoice_number || `#${card.linked_sales_invoice_id}`}
                   </a>
+                </div>
+              ) : (
+                /* No invoice yet — offer to create one */
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/invoices/new-repair?job_card_id=${card.id}`)}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition-colors"
+                  >
+                    <FileText size={11} />
+                    Create Repair Invoice
+                  </button>
                 </div>
               )}
             </div>

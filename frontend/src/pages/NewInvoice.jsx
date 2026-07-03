@@ -31,7 +31,7 @@ export default function NewInvoice() {
   const [form, setForm] = useState({
     invoice_number:   "",
     invoice_category: "ALL_INC",
-    service_type:     "SALE",
+    // service_type is always SALE on this page — hard-coded in the payload
     invoice_date:     new Date().toISOString().split("T")[0],
     due_date:         "",
     po_number:        "",
@@ -139,16 +139,16 @@ export default function NewInvoice() {
       });
   }, []);
 
-  // ── Fetch next invoice number when category or transaction type changes ────
+  // ── Fetch next invoice number when category changes (service_type is always SALE) ─
   useEffect(() => {
-    getNextInvoiceNumber(form.invoice_category, form.service_type)
+    getNextInvoiceNumber(form.invoice_category, "SALE")
       .then((d) => {
         setForm((f) => ({ ...f, invoice_number: d.invoice_number }));
       })
       .catch((err) => {
         console.error("Failed to fetch next invoice number:", err);
       });
-  }, [form.invoice_category, form.service_type]);
+  }, [form.invoice_category]);
 
   // Sync search input if customer is loaded/pre-selected
   useEffect(() => {
@@ -449,7 +449,7 @@ export default function NewInvoice() {
       const payload = {
         invoice_number:   form.invoice_number,
         invoice_category: form.invoice_category,
-        service_type:     form.service_type,
+        service_type:     "SALE",   // hard-coded — this page is Sales only
         invoice_date:     form.invoice_date,
         due_date:         form.due_date    || null,
         po_number:        form.po_number   || null,
@@ -552,9 +552,10 @@ export default function NewInvoice() {
   return (
     <div className="max-w-4xl space-y-5">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">New Invoice</h1>
+        <h1 className="text-xl font-semibold text-gray-900">New Sale Invoice</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Create a new invoice
+          Create a sales invoice — for stock items sold to customers.
+          For repair work, use <a href="/invoices/new-repair" className="text-blue-600 underline hover:text-blue-800">New Repair Invoice</a>.
         </p>
       </div>
 
@@ -567,7 +568,7 @@ export default function NewInvoice() {
 
         {/* ── Section 1: Invoice Header ───────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <h2 className="text-sm font-semibold text-gray-700">Invoice Header</h2>
             {/* Category toggle */}
             <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
@@ -582,6 +583,8 @@ export default function NewInvoice() {
                 </button>
               ))}
             </div>
+            {/* Hard-coded type badge — no dropdown */}
+            <span className="ml-auto text-xs bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-1 rounded-full font-semibold">🛒 SALE</span>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -609,15 +612,6 @@ export default function NewInvoice() {
               <input value={form.po_number}
                      onChange={(e) => setForm((f) => ({ ...f, po_number: e.target.value }))}
                      placeholder="Optional" className={inp} />
-            </div>
-            <div>
-              <label className={lbl}>Service Type</label>
-              <select value={form.service_type}
-                      onChange={(e) => setForm((f) => ({ ...f, service_type: e.target.value }))}
-                      className={inp}>
-                <option value="SALE">Sale</option>
-                <option value="REPAIR">Repair</option>
-              </select>
             </div>
             <div>
               <label className={lbl}>Sales Person</label>
