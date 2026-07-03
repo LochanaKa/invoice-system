@@ -208,7 +208,7 @@ class InvoiceCreate(BaseModel):
     customer_phone:   Optional[str] = None
     due_date:         Optional[date] = None
     po_number:        Optional[str] = None
-    warranty:         Optional[str] = None
+    warranty:         Optional[str] = Field(None, max_length=100)
     items:            List[InvoiceItemIn] = []
     route_id:         Optional[int] = None
 
@@ -332,6 +332,8 @@ class InvoiceListItem(BaseModel):
 
 class InvoiceDetail(InvoiceListItem):
     """Full detail schema — includes payments, items, and remarks."""
+    model_config = {"from_attributes": True}
+
     customer_id:   Optional[int]  = None
     rep_id:        Optional[int]  = None
     appointment_id:Optional[int]  = None

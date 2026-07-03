@@ -206,6 +206,10 @@ def run_startup_migrations(engine: Engine) -> None:
             "ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(30)"
         ))
         conn.execute(text(
+            "ALTER TABLE invoices "
+            "ADD COLUMN IF NOT EXISTS warranty VARCHAR(100)"
+        ))
+        conn.execute(text(
             "ALTER TABLE payments "
             "ADD COLUMN IF NOT EXISTS recorded_by_rep_id INTEGER REFERENCES reps(id)"
         ))
