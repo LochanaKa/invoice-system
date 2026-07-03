@@ -16,7 +16,7 @@ export default function Login() {
   // If the user was redirected here from a protected page (e.g. typed
   // /invoices directly while logged out), send them back there after
   // a successful login instead of always landing on the dashboard.
-  const from = location.state?.from?.pathname || "/dashboard";
+  const from = location.state?.from?.pathname || "/invoices/new";
 
   async function handleSubmit(e) {
     e.preventDefault();

@@ -7,27 +7,43 @@
  *   • Logo:    SVG C-mark mirroring the real logo
  */
 
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard, FileText, PlusCircle,
   Users, UserCog, AlertCircle, Settings2, MapPin, Cpu, Monitor, HardDrive, LogOut, KeyRound, ClipboardList,
-  Truck, Package, ShoppingCart, Wrench
+  Truck, Package, ShoppingCart, Wrench, ChevronDown, ChevronRight
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-
-const navItems = [
-  { to: "/dashboard",          icon: LayoutDashboard, label: "Dashboard"        },
-  { to: "/invoices",           icon: FileText,      label: "Invoices"            },
-  { to: "/invoices/new",       icon: ShoppingCart,  label: "New Sale Invoice"    },
-  { to: "/invoices/new-repair",icon: Wrench,        label: "New Repair Invoice"  },
-  { to: "/customers",          icon: Users,           label: "Customers"        },
-  { to: "/staff",              icon: UserCog,         label: "Staff Management", adminOnly: true },
-  { to: "/suppliers",          icon: Truck,           label: "Suppliers",        adminOnly: true },
-  { to: "/stock-items",        icon: Package,         label: "Stock Catalog",    adminOnly: true },
-  { to: "/stock-receipts/new", icon: PlusCircle,      label: "New Receipt",      adminOnly: true },
-  { to: "/credit",             icon: AlertCircle,     label: "Credit Aging"     },
-  { to: "/reports",            icon: FileText,        label: "Reports"          },
-  { to: "/job-cards",          icon: ClipboardList,   label: "Job Cards"        },
+// Grouped navigation structure. Each group may be a single link
+// (no `children`) or a parent with `children` array.
+const navGroups = [
+  { key: "dashboard", label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
+  { key: "new-sale", label: "New Sale Invoice", to: "/invoices/new", icon: ShoppingCart },
+  { key: "invoices", label: "Invoices", icon: FileText, children: [
+      { to: "/invoices", label: "All Invoices" },
+    ]},
+  { key: "technical", label: "Technical", icon: Wrench, children: [
+      { to: "/invoices/new-repair", label: "New Repair Invoice" },
+      { to: "/job-cards", label: "Job Cards" },
+    ]},
+  { key: "inventory", label: "Inventory", icon: Package, children: [
+      { to: "/stock-items", label: "Stock Catalog", adminOnly: true },
+      { to: "/stock-receipts/new", label: "New Receipt", adminOnly: true },
+      { to: "/suppliers", label: "Suppliers", adminOnly: true },
+    ]},
+  { key: "customers", label: "Customers", to: "/customers", icon: Users },
+  { key: "reports", label: "Reports", icon: FileText, children: [
+      { to: "/reports", label: "Reports Overview" },
+      { to: "/credit", label: "Credit Aging" },
+    ]},
+  { key: "hr", label: "HR", icon: UserCog, children: [
+      { to: "/staff", label: "Staff Management", adminOnly: true },
+    ]},
+  { key: "settings", label: "Settings", icon: Settings2, children: [
+      { to: "/settings", label: "Settings", adminOnly: true },
+      { to: "/backup", label: "Backup", adminOnly: true },
+    ]},
 ];
 
 /** SVG replica of the Creative Computers "C" mark */
@@ -60,7 +76,101 @@ function getGreeting() {
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
+  // Only one group should be open at a time (accordion). Start with the
+  // group that contains the active route, if any.
+  const getActiveGroupKey = (path) => {
+    return navGroups.find((g) => g.children && g.children.some((c) => path === c.to || path.startsWith(c.to + "/")))?.key || null;
+  };
+
+  const [openKey, setOpenKey] = useState(() => getActiveGroupKey(window.location.pathname));
+
+  // When the location changes (user navigates), auto-open the group for
+  // the active page so it remains discoverable.
+  useEffect(() => {
+    const k = getActiveGroupKey(location.pathname);
+    if (k) setOpenKey(k);
+  }, [location.pathname]);
+
+  // Helper to render a group (single link or collapsible). Kept as a
+  // function so we can render the same component in multiple layout slots.
+  function renderGroup(group) {
+    if (!group) return null;
+    const children = group.children
+      ? group.children.filter((c) => !c.adminOnly || user?.is_admin)
+      : null;
+    if (group.children && children.length === 0) return null;
+
+    if (!group.children) {
+      if (group.adminOnly && !user?.is_admin) return null;
+      const Icon = group.icon;
+      return (
+        <NavLink
+          key={group.key}
+          to={group.to}
+          onClick={() => setOpenKey(null)}
+          end={group.to === "/dashboard"}
+          className={({ isActive }) =>
+            `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
+             transition-all duration-150 group
+             ${isActive
+               ? "text-white shadow-lg"
+               : "text-blue-200 hover:text-white hover:bg-white/10"}`
+          }
+          style={({ isActive }) => isActive ? {
+            background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
+          } : {}}
+        >
+          <Icon size={16} className="flex-shrink-0" />
+          {group.label}
+        </NavLink>
+      );
+    }
+
+    const anyActive = children.some((c) => location.pathname === c.to || location.pathname.startsWith(c.to + "/"));
+    const isOpen = openKey === group.key;
+    const ParentIcon = group.icon;
+
+    return (
+      <div key={group.key}>
+        <button
+          onClick={() => setOpenKey((prev) => prev === group.key ? null : group.key)}
+          className={`w-full flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
+                      transition-all duration-150 group
+                      ${anyActive ? "text-white shadow-lg" : "text-blue-200 hover:text-white hover:bg-white/10"}`}
+        >
+          <div className="flex items-center gap-3">
+            <ParentIcon size={16} className="flex-shrink-0" />
+            <span>{group.label}</span>
+          </div>
+          <span className="opacity-80">
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </span>
+        </button>
+
+        {isOpen && (
+          <div className="mt-2 space-y-1 pl-9">
+            {children.map((child) => (
+              <NavLink
+                key={child.to}
+                to={child.to}
+                className={({ isActive }) =>
+                  `block px-3.5 py-2 rounded-lg text-sm transition-all duration-150
+                   ${isActive ? "text-white bg-white/5 font-semibold" : "text-blue-200 hover:text-white hover:bg-white/5"}`
+                }
+                style={({ isActive }) => isActive ? {
+                  background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
+                } : {}}
+              >
+                {child.label}
+              </NavLink>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   function handleLogout() {
     logout();
@@ -104,71 +214,37 @@ export default function Layout() {
           </span>
         </div>
 
-        {/* Main nav links */}
+        {/* Main nav groups split into logical sections with separators */}
         <nav className="flex-1 px-3 space-y-0.5">
-          {navItems
-            .filter((item) => !item.adminOnly || user?.is_admin)
-            .map(({ to, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={to === "/dashboard"}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
-                   transition-all duration-150 group
-                   ${isActive
-                     ? "text-white shadow-lg"
-                     : "text-blue-200 hover:text-white hover:bg-white/10"}`
-                }
-                style={({ isActive }) => isActive ? {
-                  background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
-                } : {}}
-              >
-                <Icon size={16} className="flex-shrink-0" />
-                {label}
-              </NavLink>
-            ))}
+          {/* Top quick actions */}
+          {renderGroup(navGroups.find((g) => g.key === "dashboard"))}
+          {renderGroup(navGroups.find((g) => g.key === "new-sale"))}
+
+          <div className="my-2" />
+
+          {/* Invoices */}
+          {renderGroup(navGroups.find((g) => g.key === "invoices"))}
+
+          {/* separate Technical section */}
+          <div className="border-t border-white/10 my-3" />
+          {renderGroup(navGroups.find((g) => g.key === "technical"))}
+
+          {/* separate Inventory section */}
+          <div className="border-t border-white/10 my-3" />
+          {renderGroup(navGroups.find((g) => g.key === "inventory"))}
+
+          <div className="border-t border-white/10 my-3" />
+
+          {/* Customers */}
+          {renderGroup(navGroups.find((g) => g.key === "customers"))}
         </nav>
 
-        {/* Settings and backup links */}
-        <div className="px-3 pb-3 border-t border-white/10 pt-3 space-y-2">
-          {user?.is_admin && (
-            <>
-              <NavLink
-                to="/backup"
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
-                   transition-all duration-150
-                   ${isActive
-                     ? "text-white shadow-lg"
-                     : "text-blue-300 hover:text-white hover:bg-white/10"}`
-                }
-                style={({ isActive }) => isActive ? {
-                  background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
-                } : {}}
-              >
-                <HardDrive size={16} className="flex-shrink-0" />
-                Backups
-              </NavLink>
-
-              <NavLink
-                to="/settings"
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium
-                   transition-all duration-150
-                   ${isActive
-                     ? "text-white shadow-lg"
-                     : "text-blue-300 hover:text-white hover:bg-white/10"}`
-                }
-                style={({ isActive }) => isActive ? {
-                  background: "linear-gradient(90deg, #27AE60 0%, #1e904e 100%)",
-                } : {}}
-              >
-                <Settings2 size={16} className="flex-shrink-0" />
-                Settings
-              </NavLink>
-            </>
-          )}
+        {/* Bottom section: HR and Settings (separated, pinned to bottom) */}
+        <div className="px-3 pb-3 border-t border-white/10 pt-3 space-y-2 mt-auto">
+          {renderGroup(navGroups.find((g) => g.key === "reports"))}
+          <div className="border-t border-white/5 my-2" />
+          {renderGroup(navGroups.find((g) => g.key === "hr"))}
+          {renderGroup(navGroups.find((g) => g.key === "settings"))}
         </div>
 
         {/* Footer */}

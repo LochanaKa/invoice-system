@@ -44,7 +44,7 @@ export default function App() {
           the actual page renders inside it via <Outlet />. */}
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to="/invoices/new" replace />} />
           <Route path="dashboard"    element={<Dashboard />} />
           <Route path="invoices"     element={<InvoiceList />} />
           <Route path="invoices/new"        element={<NewInvoice />} />
