@@ -18,7 +18,7 @@ import { round2, calculateItemRow, calculateInvoiceTotals } from "../utils/invoi
 // stock_item_id + suggested_price track catalog-linked rows for price-drift warning
 // stock_price_chain: full StockReceiptItemOut for stock-linked lines (prevents price drift).
 // pricing_override: when true, staff can manually edit price even for stock-linked lines.
-const EMPTY_ITEM = { description: "", serial_no: "", qty: 1, rate: "", stock_item_id: null, suggested_price: null, stock_price_chain: null, pricing_override: false };
+const EMPTY_ITEM = { description: "", serial_no: "", qty: 1, rate: "", warranty_months: "", stock_item_id: null, suggested_price: null, stock_price_chain: null, pricing_override: false };
 
 const fmt = (n) => Number(n || 0).toLocaleString("en-LK", {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -265,6 +265,8 @@ export default function NewInvoice() {
   // GET /stock-units/lookup/{serial}, then appends a new row.
   async function handleSerialScan(e) {
     if (e.key !== "Enter") return;
+    e.preventDefault();
+    e.stopPropagation();
     const serial = serialInput.trim();
     if (!serial) return;
 
@@ -333,6 +335,7 @@ export default function NewInvoice() {
             qty:               1,
             // Use unit_cost as the raw rate — the backend adds margin/SSCL/VAT from global rates.
             rate:              String(unit.latest_price?.unit_cost ?? unit.final_unit_price ?? ""),
+            warranty_months:   unit.warranty_months != null ? String(unit.warranty_months) : "",
             stock_item_id:     unit.stock_item_id,
             suggested_price:   unit.final_unit_price,
             stock_price_chain: unit.latest_price ?? null,
@@ -396,6 +399,7 @@ export default function NewInvoice() {
         description:       desc,
         qty:               qty,
         rate:              String(chain?.unit_cost ?? ""),
+        warranty_months:   pendingStockItem.warranty_months != null ? String(pendingStockItem.warranty_months) : "",
         stock_item_id:     pendingStockItem.id,
         suggested_price:   chain?.final_unit_price ?? null,
         stock_price_chain: chain,
@@ -511,6 +515,9 @@ export default function NewInvoice() {
           serial_no:     it.serial_no     || null,
           stock_item_id: it.stock_item_id || null,
           qty:           parseInt(it.qty)   || 1,
+          warranty_months: it.warranty_months !== undefined && it.warranty_months !== ""
+            ? parseInt(it.warranty_months, 10)
+            : null,
           // For locked stock-linked lines: send unit_cost as the raw rate so the backend
           // computes margin+SSCL+VAT on top of it — not on top of an already-marked-up price.
           rate: (it.stock_price_chain && !it.pricing_override)
@@ -1029,6 +1036,7 @@ export default function NewInvoice() {
                   <th className="text-left text-xs font-medium text-gray-500 px-4 py-2">DESCRIPTION</th>
                   <th className="text-left text-xs font-medium text-gray-500 px-4 py-2 w-40">SERIAL NO</th>
                   <th className="text-left text-xs font-medium text-gray-500 px-4 py-2 w-16">QTY</th>
+                  <th className="text-left text-xs font-medium text-gray-500 px-4 py-2 w-24">WARRANTY (MO)</th>
                   <th className="text-left text-xs font-medium text-gray-500 px-4 py-2 w-28">
                     RAW COST (Rs.) <span className="text-gray-300 font-normal">[internal]</span>
                   </th>
@@ -1069,6 +1077,15 @@ export default function NewInvoice() {
                           onChange={(e) => updateItem(i, "qty", e.target.value)}
                           className="w-full border-0 border-b border-gray-200 py-1 text-sm
                                      focus:outline-none focus:border-blue-500 bg-transparent text-center"
+                        />
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="number" min="0" step="1" value={item.warranty_months}
+                          onChange={(e) => updateItem(i, "warranty_months", e.target.value)}
+                          placeholder="0"
+                          className="w-full border-0 border-b border-gray-200 py-1 text-sm
+                                     focus:outline-none focus:border-blue-500 bg-transparent text-right"
                         />
                       </td>
                       <td className="px-4 py-2">

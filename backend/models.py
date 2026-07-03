@@ -229,6 +229,9 @@ class StockReceiptItem(Base):
     vat_amount              = Column(Numeric(12, 2), nullable=False, default=0)
 
     final_unit_price        = Column(Numeric(12, 2), nullable=False, default=0)   # customer-facing price per unit
+    warranty_months         = Column(Integer,       nullable=True)
+    has_manufacturer_warranty = Column(Boolean,     nullable=False, default=False)
+    manufacturer_warranty_months = Column(Integer, nullable=True)
 
     created_at              = Column(DateTime,       server_default=func.now())
 
@@ -529,6 +532,7 @@ class InvoiceItem(Base):
     serial_no     = Column(String(200))
     qty           = Column(Integer,    nullable=False, default=1)
     raw_rate      = Column(Numeric(12, 2), nullable=False, default=0)  # staff-entered cost (internal)
+    warranty_months = Column(Integer, nullable=True)
     rate          = Column(Numeric(12, 2), nullable=False, default=0)  # customer-facing unit price
     amount        = Column(Numeric(12, 2), nullable=False, default=0)  # customer-facing line total
     # Links this sold line back to the catalog item so stock can be decremented.

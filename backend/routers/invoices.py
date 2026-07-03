@@ -645,14 +645,15 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
 
         item_objects.append(
             InvoiceItem(
-                line_number   = i,
-                description   = item_data.description,
-                serial_no     = item_data.serial_no,
-                qty           = qty,
-                raw_rate      = raw_rate,
-                rate          = display_rate,
-                amount        = line["display_amount"],
-                stock_item_id = line_stock_item_ids[i - 1],  # pre-computed above
+                line_number      = i,
+                description      = item_data.description,
+                serial_no        = item_data.serial_no,
+                qty              = qty,
+                raw_rate         = raw_rate,
+                warranty_months  = item_data.warranty_months,
+                rate             = display_rate,
+                amount           = line["display_amount"],
+                stock_item_id    = line_stock_item_ids[i - 1],  # pre-computed above
             )
         )
 
@@ -723,6 +724,8 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
                     unit = serial_unit_map[serial]
                     unit.status               = "sold"
                     unit.sold_invoice_item_id = item_obj.id
+                    if item_data.warranty_months is not None:
+                        unit.warranty_months = item_data.warranty_months
 
                     # Decrement qty_on_hand on the catalog item
                     si = db.query(StockItem).filter(StockItem.id == unit.stock_item_id).first()

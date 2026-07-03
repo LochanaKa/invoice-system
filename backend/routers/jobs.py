@@ -9,6 +9,7 @@ from database import get_db
 from models import InvoiceItem, JobCard, Rep, StockUnit, RepairJob
 from schemas import JobCardCreate, JobCardResponse, JobCardUpdate
 from schemas import JobActionIn
+from warranty_utils import evaluate_job_card_warranty
 
 router = APIRouter(prefix="/jobs", tags=["Job Cards"])
 
@@ -62,12 +63,12 @@ def create_job_card(payload: JobCardCreate, db: Session = Depends(get_db)):
         device_source=payload.device_source,
     )
 
-    if payload.device_source == "CUSTOMER_OWNED":
+    if payload.device_source in {"CUSTOMER_OWNED", "NEW_CUSTOMER"}:
         card.job_type = "PAID_REPAIR"
 
-    if payload.device_source == "OURS":
+    if payload.device_source == "OLD_CUSTOMER":
         if payload.stock_unit_id is None:
-            raise HTTPException(status_code=400, detail="stock_unit_id is required when device_source is OURS.")
+            raise HTTPException(status_code=400, detail="stock_unit_id is required when device_source is OLD_CUSTOMER.")
 
         unit = db.query(StockUnit).filter(StockUnit.id == payload.stock_unit_id).first()
         if not unit:
@@ -80,22 +81,13 @@ def create_job_card(payload: JobCardCreate, db: Session = Depends(get_db)):
         if payload.serial_number and payload.serial_number.strip() and payload.serial_number.strip() != unit.serial_number:
             raise HTTPException(status_code=400, detail="Serial number does not match the selected stock unit.")
 
-        sale_date = None
-        warranty_valid = False
+        sold_item = None
         if unit.sold_invoice_item_id is not None:
             sold_item = db.query(InvoiceItem).filter(InvoiceItem.id == unit.sold_invoice_item_id).first()
-            if sold_item and sold_item.invoice and sold_item.invoice.invoice_date:
-                sale_date = sold_item.invoice.invoice_date
-                if unit.warranty_months is not None:
-                    expiry = _add_months(sale_date, unit.warranty_months)
-                    warranty_valid = expiry >= date.today()
 
-        if warranty_valid:
-            card.job_type = "WARRANTY_REPAIR"
-            new_status = "with_internal_team_warranty"
-        else:
-            card.job_type = "PAID_REPAIR"
-            new_status = "with_internal_team_paid"
+        warranty_result = evaluate_job_card_warranty(unit, sold_item, today=date.today())
+        card.job_type = warranty_result["job_type"]
+        new_status = warranty_result["new_status"]
 
         card.stock_unit_id = unit.id
         card.serial_number = unit.serial_number

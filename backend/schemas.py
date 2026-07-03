@@ -177,6 +177,7 @@ class InvoiceItemIn(BaseModel):
     qty:           int = 1
     rate:          Decimal = Decimal("0.00")   # raw cost per unit (staff-entered)
     stock_item_id: Optional[int] = None        # links this line to the stock catalog
+    warranty_months: Optional[int] = None
     pricing_override: Optional[bool] = False
 
 
@@ -188,6 +189,7 @@ class InvoiceItemOut(BaseModel):
     serial_no:     Optional[str] = None
     qty:           int
     raw_rate:      Decimal       # internal raw cost per unit
+    warranty_months: Optional[int] = None
     rate:          Decimal       # customer-facing unit price
     amount:        Decimal       # customer-facing line total
     stock_item_id: Optional[int] = None
@@ -679,6 +681,8 @@ class StockReceiptItemIn(BaseModel):
     unit_cost:            Decimal = Decimal("0.00")       # supplier charge per unit
     operation_cost_type:  str = "percentage"              # 'percentage' or 'fixed'
     operation_cost_value: Decimal = Decimal("0.0000")     # raw number entered
+    has_manufacturer_warranty: bool = False
+    manufacturer_warranty_months: Optional[int] = None
 
 
 class StockReceiptItemOut(BaseModel):
@@ -698,6 +702,8 @@ class StockReceiptItemOut(BaseModel):
     vat_pct:                Decimal
     vat_amount:             Decimal
     final_unit_price:       Decimal
+    has_manufacturer_warranty: bool = False
+    manufacturer_warranty_months: Optional[int] = None
 
     created_at:             Optional[datetime] = None
     model_config = {"from_attributes": True}
@@ -779,9 +785,14 @@ class StockUnitLookupOut(BaseModel):
     sold_invoice_id: Optional[int] = None
     sold_invoice_number: Optional[str] = None
     sold_invoice_date: Optional[date] = None
+    receipt_date: Optional[date] = None
     warranty_months: Optional[int] = None
     has_manufacturer_warranty: bool
     manufacturer_warranty_months: Optional[int] = None
+    manufacturer_warranty_expiry: Optional[date] = None
+    manufacturer_warranty_status: Optional[str] = None
+    customer_warranty_expiry: Optional[date] = None
+    customer_warranty_status: Optional[str] = None
     model_config = {"from_attributes": True}
 
 

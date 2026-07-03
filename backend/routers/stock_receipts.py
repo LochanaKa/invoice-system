@@ -142,6 +142,8 @@ def _build_item_out(ri: StockReceiptItem, units_created: int = 0) -> dict:
         vat_pct               = ri.vat_pct,
         vat_amount            = ri.vat_amount,
         final_unit_price      = ri.final_unit_price,
+        has_manufacturer_warranty = ri.has_manufacturer_warranty,
+        manufacturer_warranty_months = ri.manufacturer_warranty_months,
         created_at            = ri.created_at,
     ).model_dump()
     base["units_created"]          = units_created
@@ -261,6 +263,8 @@ def create_stock_receipt(
             vat_pct               = vat_pct,
             vat_amount            = calc["vat_amount"],
             final_unit_price      = calc["final_unit_price"],
+            has_manufacturer_warranty = bool(line.has_manufacturer_warranty),
+            manufacturer_warranty_months = line.manufacturer_warranty_months,
         )
         db.add(receipt_item)
 
@@ -367,6 +371,8 @@ def add_serial_numbers(
             stock_item_id   = receipt_item.stock_item_id,
             serial_number   = serial,
             status          = "in_stock",
+            has_manufacturer_warranty = receipt_item.has_manufacturer_warranty,
+            manufacturer_warranty_months = receipt_item.manufacturer_warranty_months,
         )
         db.add(unit)
         new_units.append(serial)

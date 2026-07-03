@@ -181,6 +181,10 @@ def run_startup_migrations(engine: Engine) -> None:
         conn.execute(text(
             "UPDATE invoice_items SET raw_rate = rate WHERE raw_rate = 0"
         ))
+        conn.execute(text(
+            "ALTER TABLE invoice_items "
+            "ADD COLUMN IF NOT EXISTS warranty_months INTEGER"
+        ))
 
         conn.execute(text(
             "ALTER TABLE reps ADD COLUMN IF NOT EXISTS role VARCHAR(100)"
@@ -390,6 +394,9 @@ def run_startup_migrations(engine: Engine) -> None:
             "vat_pct NUMERIC(8, 6) NOT NULL DEFAULT 0.18, "
             "vat_amount NUMERIC(12, 2) NOT NULL DEFAULT 0, "
             "final_unit_price NUMERIC(12, 2) NOT NULL DEFAULT 0, "
+            "warranty_months INTEGER, "
+            "has_manufacturer_warranty BOOLEAN NOT NULL DEFAULT FALSE, "
+            "manufacturer_warranty_months INTEGER, "
             "created_at TIMESTAMP DEFAULT NOW()"
             ")"
         ))
@@ -410,6 +417,15 @@ def run_startup_migrations(engine: Engine) -> None:
             ")"
         ))
         # Back-fill warranty-related columns for older DBs that may lack them
+        conn.execute(text(
+            "ALTER TABLE stock_receipt_items ADD COLUMN IF NOT EXISTS warranty_months INTEGER"
+        ))
+        conn.execute(text(
+            "ALTER TABLE stock_receipt_items ADD COLUMN IF NOT EXISTS has_manufacturer_warranty BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        conn.execute(text(
+            "ALTER TABLE stock_receipt_items ADD COLUMN IF NOT EXISTS manufacturer_warranty_months INTEGER"
+        ))
         conn.execute(text(
             "ALTER TABLE stock_units ADD COLUMN IF NOT EXISTS warranty_months INTEGER"
         ))

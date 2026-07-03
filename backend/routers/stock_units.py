@@ -54,6 +54,7 @@ from models import (
     Technician,
 )
 from schemas import StockUnitLookupOut, StockUnitOut, SerialHistoryOut
+from warranty_utils import get_warranty_summary
 
 # ── Two routers, registered separately in main.py ─────────────────────────────
 
@@ -97,6 +98,9 @@ def _to_lookup_out(unit: StockUnit, db: Session) -> StockUnitLookupOut:
         if sold_item:
             sold_invoice = sold_item.invoice
 
+    warranty_summary = get_warranty_summary(unit, sold_item, today=date.today())
+    receipt = unit.receipt_item.receipt if unit.receipt_item else None
+
     return StockUnitLookupOut(
         id                      = unit.id,
         serial_number            = unit.serial_number,
@@ -111,9 +115,14 @@ def _to_lookup_out(unit: StockUnit, db: Session) -> StockUnitLookupOut:
         sold_invoice_id          = sold_invoice.id if sold_invoice else None,
         sold_invoice_number      = sold_invoice.invoice_number if sold_invoice else None,
         sold_invoice_date        = sold_invoice.invoice_date if sold_invoice else None,
+        receipt_date             = receipt.received_date if receipt else None,
         warranty_months          = unit.warranty_months,
         has_manufacturer_warranty = unit.has_manufacturer_warranty,
         manufacturer_warranty_months = unit.manufacturer_warranty_months,
+        manufacturer_warranty_expiry = warranty_summary["manufacturer_expiry"],
+        manufacturer_warranty_status = warranty_summary["manufacturer_status"],
+        customer_warranty_expiry = warranty_summary["customer_expiry"],
+        customer_warranty_status = warranty_summary["customer_status"],
     )
 
 
@@ -149,7 +158,7 @@ def lookup_serial(
         db.query(StockUnit)
         .options(
             joinedload(StockUnit.stock_item),
-            joinedload(StockUnit.receipt_item),
+            joinedload(StockUnit.receipt_item).joinedload(StockReceiptItem.receipt),
         )
         .filter(StockUnit.serial_number == clean)
         .first()
@@ -160,7 +169,7 @@ def lookup_serial(
             db.query(StockUnit)
             .options(
                 joinedload(StockUnit.stock_item),
-                joinedload(StockUnit.receipt_item),
+                joinedload(StockUnit.receipt_item).joinedload(StockReceiptItem.receipt),
             )
             .filter(
                 StockUnit.serial_number.ilike(f"%{clean}%"),
@@ -222,6 +231,9 @@ def lookup_serial(
         if sold_item:
             sold_invoice = sold_item.invoice
 
+    warranty_summary = get_warranty_summary(unit, sold_item, today=date.today())
+    receipt = unit.receipt_item.receipt if unit.receipt_item else None
+
     return StockUnitLookupOut(
         id                      = unit.id,
         serial_number            = unit.serial_number,
@@ -236,9 +248,14 @@ def lookup_serial(
         sold_invoice_id          = sold_invoice.id if sold_invoice else None,
         sold_invoice_number      = sold_invoice.invoice_number if sold_invoice else None,
         sold_invoice_date        = sold_invoice.invoice_date if sold_invoice else None,
+        receipt_date             = receipt.received_date if receipt else None,
         warranty_months          = unit.warranty_months,
         has_manufacturer_warranty = unit.has_manufacturer_warranty,
         manufacturer_warranty_months = unit.manufacturer_warranty_months,
+        manufacturer_warranty_expiry = warranty_summary["manufacturer_expiry"],
+        manufacturer_warranty_status = warranty_summary["manufacturer_status"],
+        customer_warranty_expiry = warranty_summary["customer_expiry"],
+        customer_warranty_status = warranty_summary["customer_status"],
     )
 
 

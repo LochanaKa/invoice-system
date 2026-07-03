@@ -10,9 +10,9 @@ const intakeOptions = [
 
 const deviceSourceOptions = [
   {
-    value: "OURS",
-    label: "Our Inventory",
-    description: "This device is coming from our stock and should be matched to a serial-tracked unit.",
+    value: "OLD_CUSTOMER",
+    label: "Old Customer",
+    description: "The customer already bought this unit from us; check the manufacturer and customer warranty before routing it.",
   },
   {
     value: "CUSTOMER_OWNED",
@@ -33,7 +33,7 @@ export default function NewJobCard() {
     assigned_to_staff_id: "",
     priority: "NORMAL",
     due_date: "",
-    device_source: "OURS",
+    device_source: "OLD_CUSTOMER",
     serial_number: "",
     paper_grn_reference: "",
     linked_sales_invoice_id: null,
@@ -105,7 +105,7 @@ export default function NewJobCard() {
 
   useEffect(() => {
     const serial = (form.serial_number || "").trim();
-    if (form.device_source !== "OURS" || !serial) {
+    if (form.device_source !== "OLD_CUSTOMER" || !serial) {
       setSelectedStockUnit(null);
       setStockUnitError(null);
       setStockUnitLoading(false);
@@ -162,8 +162,8 @@ export default function NewJobCard() {
     setError(null);
     setSuccess(null);
 
-    if (form.device_source === "OURS" && !selectedStockUnit) {
-      setError("Please select a valid stock unit serial from our inventory for 'Ours' device source.");
+    if (form.device_source === "OLD_CUSTOMER" && !selectedStockUnit) {
+      setError("Please select a valid stock unit serial for the selected device source.");
       setSubmitting(false);
       return;
     }
@@ -178,7 +178,7 @@ export default function NewJobCard() {
         due_date: form.due_date || null,
         device_source: form.device_source,
         serial_number: form.serial_number.trim() || null,
-        stock_unit_id: form.device_source === "OURS" ? selectedStockUnit?.id : null,
+        stock_unit_id: form.device_source === "OLD_CUSTOMER" ? selectedStockUnit?.id : null,
         job_type: form.device_source === "CUSTOMER_OWNED" ? "PAID_REPAIR" : null,
         paper_grn_reference: form.paper_grn_reference.trim() || null,
       };
@@ -351,7 +351,7 @@ export default function NewJobCard() {
                         checked={checked}
                         onChange={(e) => {
                           handleChange(e);
-                          if (e.target.value !== "OURS") {
+                          if (e.target.value !== "OLD_CUSTOMER") {
                             setSelectedStockUnit(null);
                             setStockUnitError(null);
                           }
@@ -383,7 +383,7 @@ export default function NewJobCard() {
                 )}
               </div>
 
-              {form.device_source === "OURS" && (
+              {form.device_source === "OLD_CUSTOMER" && (
                 <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
                   {selectedStockUnit ? (
                     <div className="space-y-2 text-sm text-gray-700">
@@ -395,8 +395,15 @@ export default function NewJobCard() {
                         <div>Sold invoice: <span className="font-medium">#{selectedStockUnit.sold_invoice_number}</span></div>
                       )}
                       {selectedStockUnit.warranty_months != null && (
-                        <div>Warranty: <span className="font-medium">{selectedStockUnit.warranty_months} months</span></div>
+                        <div>Our warranty: <span className="font-medium">{selectedStockUnit.warranty_months} months</span></div>
                       )}
+                      <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Warranty review</div>
+                        <div className="mt-2 space-y-1">
+                          <div>Manufacturer warranty: <span className="font-medium text-gray-900">{selectedStockUnit.manufacturer_warranty_status || "not applicable"}</span></div>
+                          <div>Our warranty: <span className="font-medium text-gray-900">{selectedStockUnit.customer_warranty_status || "not applicable"}</span></div>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500">

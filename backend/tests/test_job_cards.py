@@ -5,6 +5,7 @@ from datetime import date
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from schemas import JobCardCreate, JobCardUpdate
+from warranty_utils import evaluate_job_card_warranty
 
 
 def test_field_grn_requires_paper_grn_reference():
@@ -119,4 +120,40 @@ def test_update_schema_accepts_customer_phone_change():
     payload = JobCardUpdate(customer_phone="0779876543")
 
     assert payload.customer_phone == "0779876543"
+
+
+def test_manufacturer_warranty_takes_priority_when_still_valid():
+    today = date(2026, 7, 15)
+    unit = type("Unit", (), {
+        "has_manufacturer_warranty": True,
+        "manufacturer_warranty_months": 6,
+        "warranty_months": 3,
+        "sold_invoice_item_id": 99,
+    })()
+    invoice = type("Invoice", (), {"invoice_date": date(2026, 4, 1)})()
+    sold_item = type("SoldItem", (), {"invoice": invoice})()
+
+    result = evaluate_job_card_warranty(unit, sold_item, today=today)
+
+    assert result["job_type"] == "WARRANTY_REPAIR"
+    assert result["entry_action"] == "send_manufacturer"
+    assert result["new_status"] == "with_manufacturer"
+
+
+def test_customer_warranty_is_used_when_manufacturer_warranty_is_not_applicable():
+    today = date(2026, 7, 15)
+    unit = type("Unit", (), {
+        "has_manufacturer_warranty": False,
+        "manufacturer_warranty_months": None,
+        "warranty_months": 12,
+        "sold_invoice_item_id": 100,
+    })()
+    invoice = type("Invoice", (), {"invoice_date": date(2026, 1, 1)})()
+    sold_item = type("SoldItem", (), {"invoice": invoice})()
+
+    result = evaluate_job_card_warranty(unit, sold_item, today=today)
+
+    assert result["job_type"] == "WARRANTY_REPAIR"
+    assert result["entry_action"] == "send_internal_warranty"
+    assert result["new_status"] == "with_internal_team_warranty"
 

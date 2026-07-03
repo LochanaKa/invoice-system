@@ -27,6 +27,9 @@ const makeEmptyItem = (defaultMarginPct = 20) => ({
   // Optional extra fixed/percentage cost (handling, shipping, overhead).
   op_cost_type:  "fixed",
   op_cost_value: "0",
+  // ── Warranty
+  has_manufacturer_warranty: false,
+  manufacturer_warranty_months: "",
   // UI helpers
   searchQuery: "",
   isSearchOpen: false,
@@ -314,6 +317,8 @@ export default function NewStockReceipt() {
             unit_cost:            Number(it.unit_cost),
             operation_cost_type:  "fixed",
             operation_cost_value: calc.totalAddOn,
+            has_manufacturer_warranty: Boolean(it.has_manufacturer_warranty),
+            manufacturer_warranty_months: it.has_manufacturer_warranty && it.manufacturer_warranty_months ? Number(it.manufacturer_warranty_months) : null,
           };
         }),
       };
@@ -538,7 +543,7 @@ export default function NewStockReceipt() {
 
   // ── UI Case 2: Standard Goods Received Note Form ────────────────────────────
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="w-full max-w-[1600px] mx-auto space-y-5 px-4 xl:px-0">
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "#1F3C8A" }}>
           New Stock Receipt (GRN)
@@ -656,7 +661,7 @@ export default function NewStockReceipt() {
         </div>
 
         {/* Lines Table */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-cc-sm" style={{ borderColor: "#d5dcf5" }}>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-cc-sm overflow-visible" style={{ borderColor: "#d5dcf5" }}>
           <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
             <div>
               <h2 className="text-sm font-semibold text-gray-700">Receipt Items</h2>
@@ -674,22 +679,26 @@ export default function NewStockReceipt() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1260px] table-auto text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500">
                   <th className="text-left px-4 py-2 w-6">NO</th>
-                  <th className="text-left px-4 py-2">PRODUCT MODEL</th>
+                  <th className="min-w-[260px] text-left px-4 py-2">PRODUCT MODEL</th>
                   <th className="text-center px-4 py-2 w-16">QTY</th>
-                  <th className="text-right px-4 py-2 w-28">UNIT COST (Rs.)</th>
-                  <th className="text-center px-4 py-2 w-36">
+                  <th className="text-right px-4 py-2 min-w-[180px]">UNIT COST (Rs.)</th>
+                  <th className="text-center px-4 py-2 min-w-[120px]">
                     PROFIT MARGIN
                     <div className="text-[10px] font-normal text-gray-400 mt-0.5">default: {defaultMarginPct}%</div>
                   </th>
-                  <th className="text-center px-4 py-2 w-32">
+                  <th className="text-center px-4 py-2 min-w-[120px]">
                     OP COST
                     <div className="text-[10px] font-normal text-gray-400 mt-0.5">handling / shipping</div>
                   </th>
-                  <th className="text-right px-4 py-2 w-40">LINE TOTAL (FINAL)</th>
+                  <th className="text-center px-4 py-2 min-w-[120px]">
+                    WARRANTY
+                    <div className="text-[10px] font-normal text-gray-400 mt-0.5">manufacturer only</div>
+                  </th>
+                  <th className="text-right px-4 py-2 min-w-[140px]">LINE TOTAL (FINAL)</th>
                   <th className="w-8"></th>
                 </tr>
               </thead>
@@ -701,7 +710,7 @@ export default function NewStockReceipt() {
                       <td className="px-4 py-2 text-gray-400 text-xs">{idx + 1}</td>
 
                       {/* Product search select */}
-                      <td className="px-4 py-2 relative">
+                      <td className="min-w-[240px] px-4 py-2 relative overflow-visible">
                         <div className="flex gap-1 items-center">
                           <input
                             type="text"
@@ -717,7 +726,7 @@ export default function NewStockReceipt() {
                               }, 250);
                             }}
                             placeholder="Type brand/model..."
-                            className="w-full border-0 border-b border-gray-200 py-1 text-sm focus:outline-none focus:border-blue-500 bg-transparent"
+                            className="w-full border-0 border-b border-gray-200 py-1 pr-3 text-sm focus:outline-none focus:border-blue-500 bg-transparent"
                             required
                           />
                           <button
@@ -734,7 +743,7 @@ export default function NewStockReceipt() {
                         </div>
 
                         {item.isSearchOpen && (
-                          <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border rounded-xl shadow-lg z-50">
+                          <div className="absolute left-0 right-0 mt-1 w-full min-w-[260px] max-h-72 overflow-y-auto bg-white border rounded-xl shadow-2xl z-[1000]">
                             {catalogItems
                               .filter(c => `${c.brand || ""} ${c.model}`.toLowerCase().includes(item.searchQuery.toLowerCase()))
                               .slice(0, 6)
@@ -768,7 +777,7 @@ export default function NewStockReceipt() {
                       </td>
 
                       {/* Unit Cost */}
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-2 min-w-[180px]">
                         <input
                           type="number"
                           min="0"
@@ -777,7 +786,8 @@ export default function NewStockReceipt() {
                           placeholder="0.00"
                           value={item.unit_cost}
                           onChange={(e) => updateItemField(idx, "unit_cost", e.target.value)}
-                          className="w-full border-0 border-b border-gray-200 py-1 text-sm focus:outline-none focus:border-blue-500 bg-transparent text-right"
+                          className="w-full border-0 border-b border-gray-200 py-2 text-sm focus:outline-none focus:border-blue-500 bg-transparent text-right"
+                          style={{ minWidth: '110px' }}
                         />
                       </td>
 
@@ -831,6 +841,32 @@ export default function NewStockReceipt() {
                             +Rs. {fmt(calc.opCostAmount)}
                           </div>
                         )}
+                      </td>
+
+                      {/* Warranty column */}
+                      <td className="px-4 py-2">
+                        <div className="space-y-1 text-xs">
+                          <label className="flex items-center gap-2 text-gray-600">
+                            <input
+                              type="checkbox"
+                              checked={item.has_manufacturer_warranty}
+                              onChange={(e) => updateItemField(idx, "has_manufacturer_warranty", e.target.checked)}
+                              className="w-4 h-4 rounded border-gray-300"
+                            />
+                            Mfr warranty
+                          </label>
+                          {item.has_manufacturer_warranty && (
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={item.manufacturer_warranty_months}
+                              onChange={(e) => updateItemField(idx, "manufacturer_warranty_months", e.target.value)}
+                              placeholder="Mfr months"
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          )}
+                        </div>
                       </td>
 
                       {/* Live Breakdown Output */}
