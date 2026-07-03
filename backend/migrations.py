@@ -432,6 +432,21 @@ def run_startup_migrations(engine: Engine) -> None:
             "changed_by_rep_id INTEGER REFERENCES reps(id)"
             ")"
         ))
+        # Ensure existing databases with narrower column sizes are widened
+        # to accept status values like 'with_internal_team_paid' (length > 20).
+        try:
+            conn.execute(text("ALTER TABLE stock_units ALTER COLUMN status TYPE VARCHAR(30)"))
+        except Exception:
+            # If ALTER fails (rare), continue — startup should not hard-fail here.
+            pass
+        try:
+            conn.execute(text("ALTER TABLE stock_unit_status_history ALTER COLUMN old_status TYPE VARCHAR(30)"))
+        except Exception:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE stock_unit_status_history ALTER COLUMN new_status TYPE VARCHAR(30)"))
+        except Exception:
+            pass
         conn.execute(text(
             "CREATE TABLE IF NOT EXISTS technicians ("
             "id SERIAL PRIMARY KEY, "

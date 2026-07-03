@@ -262,6 +262,9 @@ export const getJobCard = (id) =>
 export const updateJobCard = (id, data) =>
   api.patch(`/jobs/${id}`, data).then((r) => r.data);
 
+export const deleteJobCard = (id) =>
+  api.delete(`/jobs/${id}`).then((r) => r.data);
+
 export const getRepPortfolio = (repId) =>
   api.get(`/reps/${repId}/portfolio`).then((r) => r.data);
 
@@ -367,7 +370,7 @@ export const lookupSerial = (serialNumber, fuzzy = false) =>
 export const searchStockUnits = (serialNumber) =>
   api
     .get(`/stock-units/lookup/${encodeURIComponent(serialNumber)}`, {
-      params: { fuzzy: true },
+      params: { fuzzy: true, allow_any_status: true },
     })
     .then((r) => r.data);
 

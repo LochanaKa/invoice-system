@@ -123,6 +123,7 @@ def _to_lookup_out(unit: StockUnit, db: Session) -> StockUnitLookupOut:
 def lookup_serial(
     serial_number: str,
     fuzzy: bool = Query(False, description="Allow partial/fuzzy serial search when an exact match is not found."),
+    allow_any_status: bool = Query(False, description="When true, return units regardless of current status (used by job-card creation)."),
     db: Session = Depends(get_db),
 ):
     """
@@ -179,7 +180,10 @@ def lookup_serial(
         )
 
     # ── Status guard ─────────────────────────────────────────────────────────
-    if unit.status != "in_stock":
+    # By default we require 'in_stock' for lookups (used for invoice creation).
+    # Callers that need to accept any existing unit (job-card creation) can set
+    # `allow_any_status=true` and bypass this availability guard.
+    if not allow_any_status and unit.status != "in_stock":
         status_messages = {
             "sold":                         "This unit was already sold"
             + (

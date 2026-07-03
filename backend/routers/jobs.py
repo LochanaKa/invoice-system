@@ -73,8 +73,9 @@ def create_job_card(payload: JobCardCreate, db: Session = Depends(get_db)):
         if not unit:
             raise HTTPException(status_code=404, detail="Selected stock unit was not found.")
 
-        if unit.status != "in_stock":
-            raise HTTPException(status_code=409, detail="Selected stock unit is not available for repair.")
+        # Accept units regardless of current `status` for job-card creation.
+        # The frontend will call the lookup with `allow_any_status=true` so
+        # the UI can select sold/returned units. Do not block here by status.
 
         if payload.serial_number and payload.serial_number.strip() and payload.serial_number.strip() != unit.serial_number:
             raise HTTPException(status_code=400, detail="Serial number does not match the selected stock unit.")
@@ -219,3 +220,21 @@ def update_job_card(job_card_id: int, payload: JobCardUpdate, db: Session = Depe
     db.commit()
     db.refresh(card)
     return card
+
+
+def _clear_linked_repair_jobs(db: Session, job_card_id: int) -> int:
+    return db.query(RepairJob).filter(RepairJob.linked_job_card_id == job_card_id).update(
+        {"linked_job_card_id": None}, synchronize_session=False
+    )
+
+
+@router.delete("/{job_card_id}", status_code=204)
+def delete_job_card(job_card_id: int, db: Session = Depends(get_db)):
+    card = db.query(JobCard).filter(JobCard.id == job_card_id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Job card not found.")
+
+    _clear_linked_repair_jobs(db, job_card_id)
+    db.delete(card)
+    db.commit()
+    return None

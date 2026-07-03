@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Save, ClipboardList, FileText } from "lucide-react";
-import { getJobCard, updateJobCard, getReps } from "../services/api";
+import { ArrowLeft, RefreshCw, Save, ClipboardList, FileText, Trash2 } from "lucide-react";
+import { getJobCard, updateJobCard, deleteJobCard, getReps } from "../services/api";
 
 const statusOptions = ["NEW", "IN_PROGRESS", "READY_FOR_PICKUP", "COMPLETED", "CANCELLED"];
 
@@ -22,6 +22,7 @@ export default function JobCardDetail() {
   const [staff, setStaff] = useState([]);
   const [error, setError] = useState(null);
   const [workflowSaving, setWorkflowSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState(null);
 
   useEffect(() => {
@@ -119,6 +120,22 @@ export default function JobCardDetail() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!card) return;
+    if (!window.confirm(`Delete job card #${card.id}? This cannot be undone.`)) return;
+
+    setIsDeleting(true);
+    setActionError(null);
+    try {
+      await deleteJobCard(card.id);
+      navigate("/job-cards");
+    } catch (err) {
+      setActionError(err.response?.data?.detail || err.message || "Failed to delete job card.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 gap-2 text-[#1F3C8A]">
@@ -192,6 +209,17 @@ export default function JobCardDetail() {
                   </button>
                 </div>
               )}
+            </div>
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+              >
+                <Trash2 size={14} />
+                {isDeleting ? "Deleting…" : "Delete Job Card"}
+              </button>
             </div>
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Issue</div>

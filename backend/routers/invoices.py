@@ -27,7 +27,7 @@ Calculation chain (applied server-side on every create):
   Internal audit fields (base_subtotal, profit_margin_amount, etc.) are always
   stored on the invoice row regardless of category.
 """
-from models import Invoice, Customer, Rep, Route, Payment, InvoiceItem, Settings, StockItem, StockUnit, StockReceipt, StockReceiptItem
+from models import Invoice, Customer, Rep, Route, Payment, InvoiceItem, Settings, StockItem, StockUnit, StockReceipt, StockReceiptItem, JobCard
 from decimal import Decimal, ROUND_HALF_UP
 import re
 import datetime
@@ -803,14 +803,64 @@ def mark_vat_posted(invoice_id: int, db: Session = Depends(get_db)):
     return {"message": f"Invoice {inv.invoice_number} marked as VAT posted"}
 
 
+def _restore_invoice_stock(db: Session, inv: Invoice) -> None:
+    """Return inventory to the warehouse before deleting a sale invoice."""
+    if inv.service_type == "REPAIR":
+        return
+
+    for item in inv.items:
+        qty = item.qty or 1
+        if item.serial_no:
+            serials = [s.strip() for s in (item.serial_no or "").split(",") if s.strip()]
+            for serial in serials:
+                unit = db.query(StockUnit).filter(StockUnit.serial_number == serial).first()
+                if not unit or unit.sold_invoice_item_id != item.id:
+                    continue
+
+                if unit.status == "sold":
+                    unit.status = "in_stock"
+                    stock_item = db.query(StockItem).filter(StockItem.id == unit.stock_item_id).first()
+                    if stock_item:
+                        stock_item.qty_on_hand = (stock_item.qty_on_hand or 0) + 1
+
+                unit.sold_invoice_item_id = None
+
+        elif item.stock_item_id:
+            stock_item = db.query(StockItem).filter(StockItem.id == item.stock_item_id).first()
+            if stock_item:
+                stock_item.qty_on_hand = (stock_item.qty_on_hand or 0) + qty
+
+
+def _clear_invoice_links(db: Session, invoice_id: int) -> int:
+    """Clear optional links from job cards that reference this invoice."""
+    return db.query(JobCard).filter(JobCard.linked_sales_invoice_id == invoice_id).update(
+        {"linked_sales_invoice_id": None}, synchronize_session=False
+    )
+
+
 @router.delete("/{invoice_id}", status_code=204)
 def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
     """Hard-delete an invoice, cascading to its items and payments."""
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    db.delete(inv)
-    db.commit()
+
+    _restore_invoice_stock(db, inv)
+    _clear_invoice_links(db, invoice_id)
+
+    try:
+        db.delete(inv)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to delete invoice because related records could not be cleaned up. "
+                "Please review linked repair/job records and inventory associations."
+            ),
+        )
+
     return None
 
 
