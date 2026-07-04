@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, RefreshCw, Save, ClipboardList, FileText, Trash2 } from "lucide-react";
-import { getJobCard, updateJobCard, deleteJobCard, getReps } from "../services/api";
+import { getJobCard, updateJobCard, deleteJobCard, getReps, runJobCardAction, getTechnicians, getStockUnitBySerial } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 const statusOptions = ["NEW", "IN_PROGRESS", "READY_FOR_PICKUP", "COMPLETED", "CANCELLED"];
 
@@ -24,6 +25,15 @@ export default function JobCardDetail() {
   const [workflowSaving, setWorkflowSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [showTechModal, setShowTechModal] = useState(false);
+  const [techs, setTechs] = useState([]);
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState("");
+  const [dateSent, setDateSent] = useState("");
+  const [amountCharged, setAmountCharged] = useState("");
+  const [pendingAction, setPendingAction] = useState(null);
+  const [stockUnitStatus, setStockUnitStatus] = useState(null);
+  const [handledByRepId, setHandledByRepId] = useState("");
+  const { user } = useAuth();
 
   useEffect(() => {
     const load = async () => {
@@ -31,11 +41,21 @@ export default function JobCardDetail() {
       try {
         const [data, reps] = await Promise.all([getJobCard(id), getReps()]);
         setCard(data);
+        if (data && data.serial_number) {
+          try {
+            const su = await getStockUnitBySerial(data.serial_number);
+            setStockUnitStatus(su.status);
+          } catch (_) {
+            setStockUnitStatus(null);
+          }
+        }
         setStatus(data.status || "NEW");
         setNotes(data.notes || "");
         setPriority(data.priority || "MEDIUM");
         setDueDate(data.due_date || "");
         setAssignedToStaffId(data.assigned_to_staff_id ? String(data.assigned_to_staff_id) : "");
+        // default handledBy to current user rep or assigned staff
+        setHandledByRepId((user?.rep_id && String(user.rep_id)) || (data.assigned_to_staff_id ? String(data.assigned_to_staff_id) : ""));
         setStaff((reps || []).filter((rep) => rep.is_active !== false));
       } catch {
         setError("Failed to load job card.");
@@ -60,38 +80,75 @@ export default function JobCardDetail() {
   };
 
   const handleWorkflowAction = async (action) => {
+    // Actions that require technician details: show modal first
+    if (action === "send_third_party_warranty" || action === "send_third_party_paid") {
+      setPendingAction(action);
+      setShowTechModal(true);
+      // load technicians when opening modal
+      try {
+        const t = await getTechnicians();
+        setTechs(t || []);
+      } catch (e) {
+        setTechs([]);
+      }
+      return;
+    }
+
+    // Simple actions: POST to /jobs/{id}/action
     setWorkflowSaving(true);
     setActionError(null);
     try {
-      let payload = {};
-      let note = (card.notes || "") + `\n[Workflow] ${action} triggered`;
-
-      switch (action) {
-        case "send_manufacturer":
-          payload.status = "SENT_TO_MANUFACTURER";
-          break;
-        case "send_internal_warranty":
-          payload.status = "WITH_INTERNAL_TEAM_WARRANTY";
-          break;
-        case "send_third_party_warranty":
-          payload.status = "WITH_THIRD_PARTY_WARRANTY";
-          break;
-        case "replace_under_warranty":
-          payload.status = "WARRANTY_REPLACED";
-          break;
-        case "send_internal_paid":
-          payload.status = "WITH_INTERNAL_TEAM_PAID";
-          break;
-        case "send_third_party_paid":
-          payload.status = "WITH_THIRD_PARTY_PAID";
-          break;
-        default:
-          throw new Error("Unknown workflow action");
+      const payload = { action };
+      if (action === "send_internal_warranty" || action === "send_internal_paid") {
+        // Include which internal rep handled this transition
+        payload.handled_by_rep_id = handledByRepId ? Number(handledByRepId) : user?.rep_id;
       }
-
-      payload.notes = note;
-      const updated = await updateJobCard(id, payload);
+      // TODO: replace_under_warranty may later require extra inputs — revisit
+      const updated = await runJobCardAction(id, payload);
       setCard(updated);
+      // refresh stock unit status if linked
+      if (updated && updated.serial_number) {
+        try {
+          const su = await getStockUnitBySerial(updated.serial_number);
+          setStockUnitStatus(su.status);
+        } catch (_) {
+          setStockUnitStatus(null);
+        }
+      }
+    } catch (err) {
+      setActionError(err.response?.data?.detail || err.message || "Failed to apply action.");
+    } finally {
+      setWorkflowSaving(false);
+    }
+  };
+
+  const submitTechnicianAction = async () => {
+    if (!pendingAction) return;
+    setWorkflowSaving(true);
+    setActionError(null);
+    try {
+      const payload = {
+        action: pendingAction,
+        technician_id: selectedTechnicianId ? Number(selectedTechnicianId) : undefined,
+        date_sent: dateSent || undefined,
+        amount_charged_by_technician: amountCharged ? Number(amountCharged) : undefined,
+      };
+      const updated = await runJobCardAction(id, payload);
+      setCard(updated);
+      setShowTechModal(false);
+      setPendingAction(null);
+      setSelectedTechnicianId("");
+      setDateSent("");
+      setAmountCharged("");
+      // refresh stock unit status if linked
+      if (updated && updated.serial_number) {
+        try {
+          const su = await getStockUnitBySerial(updated.serial_number);
+          setStockUnitStatus(su.status);
+        } catch (_) {
+          setStockUnitStatus(null);
+        }
+      }
     } catch (err) {
       setActionError(err.response?.data?.detail || err.message || "Failed to apply action.");
     } finally {
@@ -185,6 +242,9 @@ export default function JobCardDetail() {
               {card.serial_number && (
                 <div className="mt-0.5 text-sm text-gray-500 font-mono">S/N: {card.serial_number}</div>
               )}
+              {stockUnitStatus && (
+                <div className="mt-0.5 text-sm text-gray-500">Stock status: {stockUnitStatus.replaceAll("_", " ")}</div>
+              )}
               {card.linked_sales_invoice_id ? (
                 /* Invoice already exists — show a view link */
                 <div className="mt-1.5">
@@ -258,6 +318,15 @@ export default function JobCardDetail() {
 
             <div className="mt-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Next Actions</div>
+              <div className="mt-2 text-sm text-gray-700">
+                <label className="block text-xs text-gray-500">Handled by</label>
+                <select value={handledByRepId} onChange={(e) => setHandledByRepId(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
+                  <option value="">(Current user)</option>
+                  {staff.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
               <div className="mt-2 flex flex-col gap-2">
                 {/* Warranty path actions */}
                 {card.job_type === "WARRANTY_REPAIR" && (
@@ -271,7 +340,7 @@ export default function JobCardDetail() {
                       onClick={() => handleWorkflowAction("send_internal_warranty")}
                       disabled={workflowSaving}
                       className="w-full text-left rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
-                    >Send to Internal Warranty Team</button>
+                    >Internal Team</button>
                     <button
                       onClick={() => handleWorkflowAction("send_third_party_warranty")}
                       disabled={workflowSaving}
@@ -292,7 +361,7 @@ export default function JobCardDetail() {
                       onClick={() => handleWorkflowAction("send_internal_paid")}
                       disabled={workflowSaving}
                       className="w-full text-left rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
-                    >Send to Internal Paid Repair</button>
+                    >Internal Paid</button>
                     <button
                       onClick={() => handleWorkflowAction("send_third_party_paid")}
                       disabled={workflowSaving}
@@ -337,6 +406,40 @@ export default function JobCardDetail() {
 
             {actionError && <div className="mt-3 text-sm text-red-600">{actionError}</div>}
             {workflowSaving && <div className="mt-3 text-sm text-gray-600">Applying action…</div>}
+            {/* Technician modal for third-party actions */}
+            {showTechModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-lg p-4 w-full max-w-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Technician details</div>
+                    <button onClick={() => { setShowTechModal(false); setPendingAction(null); }} className="text-sm text-gray-500">Close</button>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <label className="block text-xs text-gray-500">Technician</label>
+                      <select value={selectedTechnicianId} onChange={(e) => setSelectedTechnicianId(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
+                        <option value="">Select technician</option>
+                        {techs.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name || t.display_name || t.username}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500">Date Sent</label>
+                      <input type="date" value={dateSent} onChange={(e) => setDateSent(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500">Amount charged by technician</label>
+                      <input type="number" step="0.01" value={amountCharged} onChange={(e) => setAmountCharged(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => { setShowTechModal(false); setPendingAction(null); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">Cancel</button>
+                      <button onClick={submitTechnicianAction} disabled={workflowSaving} className="rounded-lg bg-[#1F3C8A] px-3 py-2 text-sm font-medium text-white">{workflowSaving ? "Submitting…" : "Submit"}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

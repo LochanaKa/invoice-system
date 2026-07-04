@@ -35,6 +35,7 @@ import BackupManager  from "./pages/BackupManager";
 import Suppliers      from "./pages/Suppliers";
 import StockItems     from "./pages/StockItems";
 import NewStockReceipt from "./pages/NewStockReceipt";
+import ManufacturerWarranty from "./pages/ManufacturerWarranty";
 
 export default function App() {
   return (
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="customers/:id" element={<CustomerDetail />} />
           <Route path="suppliers"    element={<Suppliers />} />
           <Route path="stock-items"   element={<StockItems />} />
+          <Route path="manufacturer-warranty" element={<ManufacturerWarranty />} />
           <Route path="serial-history" element={<SerialLookup />} />
           <Route path="stock-receipts/new" element={<NewStockReceipt />} />
           <Route path="staff"              element={<StaffManagement />} />

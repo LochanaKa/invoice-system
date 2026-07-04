@@ -31,6 +31,7 @@ const navGroups = [
   { key: "inventory", label: "Inventory", icon: Package, children: [
       { to: "/stock-items", label: "Stock Catalog", adminOnly: true },
       { to: "/serial-history", label: "Serial History" },
+      { to: "/manufacturer-warranty", label: "Manufacturer Claims" },
       { to: "/stock-receipts/new", label: "New Receipt", adminOnly: true },
       { to: "/suppliers", label: "Suppliers", adminOnly: true },
     ]},

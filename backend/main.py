@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 
 from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes, technicians, backup_router, preferences, auth_router, jobs
-from routers import suppliers, stock_categories, stock_items, stock_receipts, stock_units, debug
+from routers import suppliers, stock_categories, stock_items, stock_receipts, stock_units, manufacturer_warranty, debug
 from database import engine
 from models import Base
 from migrations import run_startup_migrations
@@ -87,6 +87,8 @@ app.include_router(suppliers.router,         prefix="/api", **admin_only) #  ←
 app.include_router(stock_categories.router,  prefix="/api", **admin_only) #  ← Stock category CRUD
 app.include_router(stock_items.router,       prefix="/api", **admin_only) #  ← Catalog item CRUD
 app.include_router(stock_receipts.router,    prefix="/api", **admin_only) #  ← GRN create/view
+# Manufacturer warranty claims: authenticated reps may LIST/GET; updating outcomes is admin-only (enforced in router)
+app.include_router(manufacturer_warranty.router, prefix="/api", **protected)
 # Barcode lookup — any logged-in rep (needed during invoice creation)
 app.include_router(stock_units.lookup_router, prefix="/api", **protected)  #  ← /lookup/{serial}
 # Unit listing — admin only (inventory browse page)

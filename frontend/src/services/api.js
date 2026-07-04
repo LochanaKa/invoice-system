@@ -265,6 +265,14 @@ export const updateJobCard = (id, data) =>
 export const deleteJobCard = (id) =>
   api.delete(`/jobs/${id}`).then((r) => r.data);
 
+// Run workflow action on a job card (uses backend /jobs/{id}/action endpoint)
+export const runJobCardAction = (jobCardId, payload) =>
+  api.post(`/jobs/${jobCardId}/action`, payload).then((r) => r.data);
+
+// Fetch a stock unit by serial (allow any status) — used to show updated status
+export const getStockUnitBySerial = (serialNumber) =>
+  api.get(`/stock-units/lookup/${encodeURIComponent(serialNumber)}`, { params: { allow_any_status: true } }).then((r) => r.data);
+
 export const getRepPortfolio = (repId) =>
   api.get(`/reps/${repId}/portfolio`).then((r) => r.data);
 
@@ -378,4 +386,17 @@ export const getSerialFullHistory = (serialNumber) =>
   api
     .get(`/stock-units/${encodeURIComponent(serialNumber)}/full-history`)
     .then((r) => r.data);
+
+// ── Manufacturer warranty claims ─────────────────────────────────
+export const getManufacturerWarrantyClaims = (params) =>
+  api.get("/manufacturer-warranty-claims", { params }).then((r) => r.data);
+
+export const updateManufacturerWarrantyClaim = (id, data) =>
+  api.patch(`/manufacturer-warranty-claims/${id}`, data).then((r) => r.data);
+
+export const getManufacturerClaimHistory = (claimId) =>
+  api.get(`/manufacturer-warranty-claims/${claimId}/history`).then((r) => r.data);
+
+export const deleteManufacturerWarrantyClaim = (id) =>
+  api.delete(`/manufacturer-warranty-claims/${id}`).then((r) => r.data);
 

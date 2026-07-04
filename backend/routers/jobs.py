@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from database import get_db
-from models import InvoiceItem, JobCard, Rep, StockUnit, RepairJob
+from models import InvoiceItem, JobCard, Rep, StockUnit, RepairJob, StockReceiptItem, StockReceipt, ManufacturerWarrantyClaim, StockItem, ManufacturerWarrantyClaimHistory
 from schemas import JobCardCreate, JobCardResponse, JobCardUpdate
 from schemas import JobActionIn
 from warranty_utils import evaluate_job_card_warranty
@@ -124,16 +124,51 @@ def job_card_action(job_card_id: int, payload: JobActionIn, db: Session = Depend
     # Map actions to new stock unit statuses and behaviors
     try:
         if action == "send_manufacturer":
-            # Manufacturer path — no RepairJob record required here
-            unit.record_status_change(db, "with_manufacturer", note=f"Sent to manufacturer (job #{card.id})", changed_by_rep_id=card.assigned_to_staff_id or card.received_by_staff_id)
+            # Manufacturer path — create a ManufacturerWarrantyClaim and update unit status
+            # Trace the unit back to the original receipt -> supplier
+            receipt_item = db.query(StockReceiptItem).filter(StockReceiptItem.id == unit.receipt_item_id).first()
+            if not receipt_item:
+                raise HTTPException(status_code=500, detail="Could not trace this unit's original delivery record.")
+            receipt = db.query(StockReceipt).options(joinedload(StockReceipt.supplier)).filter(StockReceipt.id == receipt_item.receipt_id).first()
+            if not receipt or not getattr(receipt, "supplier_id", None):
+                raise HTTPException(status_code=500, detail="Could not trace this unit's original delivery record.")
+
+            claim = ManufacturerWarrantyClaim(
+                stock_unit_id=unit.id,
+                supplier_id=receipt.supplier_id,
+                linked_job_card_id=card.id,
+                date_sent=payload.date_sent or date.today(),
+                outcome="pending",
+            )
+            db.add(claim)
+            # Flush to obtain claim.id for creating an audit history row
+            db.flush()
+            try:
+                hist = ManufacturerWarrantyClaimHistory(
+                    claim_id=claim.id,
+                    old_outcome=None,
+                    new_outcome='pending',
+                    note=f"Created from job card #{card.id}",
+                    changed_by_rep_id=handled_by,
+                )
+                db.add(hist)
+            except Exception:
+                # Best-effort: if history insert fails, continue without blocking the action
+                pass
+
+            handled_by = payload.handled_by_rep_id or card.assigned_to_staff_id or card.received_by_staff_id
+            unit.record_status_change(
+                db,
+                "with_manufacturer",
+                note=f"Sent to manufacturer ({receipt.supplier.name if receipt and receipt.supplier else 'unknown supplier'}) — job #{card.id}",
+                changed_by_rep_id=handled_by,
+            )
             card.status = "IN_PROGRESS"
 
         elif action == "send_internal_warranty":
-            unit.record_status_change(db, "with_internal_team_warranty", note=f"Sent to internal warranty team (job #{card.id})", changed_by_rep_id=card.assigned_to_staff_id or card.received_by_staff_id)
-            # create a RepairJob entry if technician provided
-            if payload.technician_id:
-                rj = RepairJob(stock_unit_id=unit.id, technician_id=payload.technician_id, date_sent=payload.date_sent or date.today(), amount_charged_by_technician=payload.amount_charged_by_technician, outcome="pending", linked_job_card_id=card.id)
-                db.add(rj)
+            # Internal team — do not create RepairJob rows. Log which rep handled it.
+            handled_by = payload.handled_by_rep_id or card.assigned_to_staff_id or card.received_by_staff_id
+            unit.record_status_change(db, "with_internal_team_warranty", note=f"Sent to internal team for warranty repair (job #{card.id})", changed_by_rep_id=handled_by)
             card.status = "IN_PROGRESS"
 
         elif action == "send_third_party_warranty":
@@ -144,15 +179,33 @@ def job_card_action(job_card_id: int, payload: JobActionIn, db: Session = Depend
             card.status = "IN_PROGRESS"
 
         elif action == "replace_under_warranty":
-            unit.record_status_change(db, "warranty_replaced", note=f"Replaced under warranty (job #{card.id})", changed_by_rep_id=card.assigned_to_staff_id or card.received_by_staff_id)
+            # Replacement must be selected by the user
+            if not payload.replacement_stock_unit_id:
+                raise HTTPException(status_code=422, detail="A replacement unit's serial must be selected.")
+            replacement = db.query(StockUnit).filter(StockUnit.id == payload.replacement_stock_unit_id, StockUnit.status == 'in_stock').first()
+            if not replacement:
+                raise HTTPException(status_code=409, detail="Selected replacement unit is not available.")
+            if replacement.stock_item_id != unit.stock_item_id:
+                raise HTTPException(status_code=422, detail="Replacement unit must be the same model as the original.")
+
+            # Mark replacement as issued (record status change so history is logged)
+            handled_by = payload.handled_by_rep_id or card.assigned_to_staff_id or card.received_by_staff_id
+            replacement.record_status_change(db, 'issued_as_replacement', note=f"Issued as replacement for unit {unit.serial_number} (job #{card.id})", changed_by_rep_id=handled_by)
+            replacement.replacement_for_unit_id = unit.id
+
+            stock_item = db.query(StockItem).filter(StockItem.id == replacement.stock_item_id).with_for_update().first()
+            if stock_item:
+                if (stock_item.qty_on_hand or 0) <= 0:
+                    raise HTTPException(status_code=409, detail="Replacement stock item is no longer available.")
+                stock_item.qty_on_hand = (stock_item.qty_on_hand or 0) - 1
+
+            unit.record_status_change(db, "warranty_replaced", note=f"Replaced with serial {replacement.serial_number} (job #{card.id})", changed_by_rep_id=card.assigned_to_staff_id or card.received_by_staff_id)
             card.status = "COMPLETED"
 
         elif action == "send_internal_paid":
-            unit.record_status_change(db, "with_internal_team_paid", note=f"Sent to internal paid repair (job #{card.id})", changed_by_rep_id=card.assigned_to_staff_id or card.received_by_staff_id)
-            if not payload.technician_id:
-                raise HTTPException(status_code=422, detail="technician_id is required for internal paid repair assignments")
-            rj = RepairJob(stock_unit_id=unit.id, technician_id=payload.technician_id, date_sent=payload.date_sent or date.today(), amount_charged_by_technician=payload.amount_charged_by_technician, outcome="pending", linked_job_card_id=card.id)
-            db.add(rj)
+            # Internal paid repair — handled by internal staff, no RepairJob rows.
+            handled_by = payload.handled_by_rep_id or card.assigned_to_staff_id or card.received_by_staff_id
+            unit.record_status_change(db, "with_internal_team_paid", note=f"Sent to internal team for paid repair (job #{card.id})", changed_by_rep_id=handled_by)
             card.status = "IN_PROGRESS"
 
         elif action == "send_third_party_paid":

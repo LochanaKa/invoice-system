@@ -126,6 +126,23 @@ def _to_lookup_out(unit: StockUnit, db: Session) -> StockUnitLookupOut:
     )
 
 
+@lookup_router.get("/{unit_id}/available-replacements", response_model=List[StockUnitLookupOut])
+def get_available_replacements(unit_id: int, db: Session = Depends(get_db)):
+    unit = db.query(StockUnit).filter(StockUnit.id == unit_id).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Stock unit not found.")
+
+    candidates = (
+        db.query(StockUnit)
+        .options(joinedload(StockUnit.receipt_item).joinedload(StockReceiptItem.receipt), joinedload(StockUnit.stock_item))
+        .filter(StockUnit.stock_item_id == unit.stock_item_id, StockUnit.status == "in_stock", StockUnit.id != unit.id)
+        .order_by(StockUnit.created_at)
+        .all()
+    )
+
+    return [_to_lookup_out(c, db) for c in candidates]
+
+
 # ── GET /stock-units/lookup/{serial_number}  (lookup_router — any rep) ────────
 
 @lookup_router.get("/lookup/{serial_number}", response_model=StockUnitLookupOut)

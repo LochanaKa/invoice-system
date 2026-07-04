@@ -362,6 +362,20 @@ def run_startup_migrations(engine: Engine) -> None:
             "qty_on_hand INTEGER NOT NULL DEFAULT 0, "
             "reorder_level INTEGER, "
             "is_active BOOLEAN DEFAULT TRUE, "
+            "created_at TIMESTAMP DEFAULT NOW(), "
+            "CONSTRAINT ck_stock_items_qty_on_hand_nonnegative CHECK (qty_on_hand >= 0)"
+            ")"
+        ))
+        # Manufacturer warranty claim history table (audit trail for changes)
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS manufacturer_warranty_claim_histories ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "claim_id BIGINT NOT NULL REFERENCES manufacturer_warranty_claims(id), "
+            "old_outcome VARCHAR(30), "
+            "new_outcome VARCHAR(30), "
+            "note TEXT, "
+            "changed_by_user_id INTEGER REFERENCES users(id), "
+            "changed_by_rep_id INTEGER REFERENCES reps(id), "
             "created_at TIMESTAMP DEFAULT NOW()"
             ")"
         ))
@@ -416,6 +430,10 @@ def run_startup_migrations(engine: Engine) -> None:
             "updated_at TIMESTAMP DEFAULT NOW()"
             ")"
         ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_stock_units_stock_item_id "
+            "ON stock_units(stock_item_id)"
+        ))
         # Back-fill warranty-related columns for older DBs that may lack them
         conn.execute(text(
             "ALTER TABLE stock_receipt_items ADD COLUMN IF NOT EXISTS warranty_months INTEGER"
@@ -440,6 +458,9 @@ def run_startup_migrations(engine: Engine) -> None:
         ))
         conn.execute(text(
             "ALTER TABLE stock_units ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()"
+        ))
+        conn.execute(text(
+            "ALTER TABLE stock_units ADD COLUMN IF NOT EXISTS replacement_for_unit_id BIGINT REFERENCES stock_units(id)"
         ))
         conn.execute(text(
             "CREATE TABLE IF NOT EXISTS stock_unit_status_history ("
@@ -490,6 +511,26 @@ def run_startup_migrations(engine: Engine) -> None:
             "linked_job_card_id INTEGER REFERENCES job_cards(id), "
             "created_at TIMESTAMP DEFAULT NOW()"
             ")"
+        ))
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS manufacturer_warranty_claims ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "stock_unit_id BIGINT NOT NULL REFERENCES stock_units(id), "
+            "supplier_id INTEGER NOT NULL REFERENCES suppliers(id), "
+            "linked_job_card_id INTEGER REFERENCES job_cards(id), "
+            "date_sent DATE NOT NULL, "
+            "expected_return_date DATE, "
+            "date_returned DATE, "
+            "outcome VARCHAR(30) NOT NULL DEFAULT 'pending', "
+            "tracking_reference VARCHAR(100), "
+            "notes TEXT, "
+            "created_at TIMESTAMP DEFAULT NOW(), "
+            "updated_at TIMESTAMP DEFAULT NOW()"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_manufacturer_warranty_claims_linked_job_card_id "
+            "ON manufacturer_warranty_claims(linked_job_card_id)"
         ))
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_stock_units_serial "

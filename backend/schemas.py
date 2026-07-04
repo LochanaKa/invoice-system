@@ -299,6 +299,8 @@ class JobActionIn(BaseModel):
     date_sent: Optional[date] = None
     amount_charged_by_technician: Optional[Decimal] = None
     outcome: Optional[str] = None
+    handled_by_rep_id: Optional[int] = None
+    replacement_stock_unit_id: Optional[int] = None
 
 
 class InvoiceListItem(BaseModel):
@@ -561,6 +563,61 @@ class RepairJobHistoryOut(BaseModel):
     created_at:             Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class ManufacturerWarrantyClaimOut(BaseModel):
+    id: int
+    stock_unit_id: Optional[int] = None
+    stock_unit_serial_number: Optional[str] = None
+    stock_item_brand: Optional[str] = None
+    stock_item_model: Optional[str] = None
+    supplier_id: int
+    supplier_name: Optional[str] = None
+    linked_job_card_id: Optional[int] = None
+    date_sent: date
+    expected_return_date: Optional[date] = None
+    date_returned: Optional[date] = None
+    outcome: str
+    tracking_reference: Optional[str] = None
+    notes: Optional[str] = None
+    changed_by_rep_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ManufacturerWarrantyClaimPage(BaseModel):
+    items: List[ManufacturerWarrantyClaimOut]
+    total: int
+    limit: int
+    offset: int
+
+    model_config = {"from_attributes": True}
+
+
+class ManufacturerWarrantyClaimHistoryOut(BaseModel):
+    id: int
+    claim_id: int
+    old_outcome: Optional[str] = None
+    new_outcome: Optional[str] = None
+    note: Optional[str] = None
+    changed_by_user_id: Optional[int] = None
+    changed_by_rep_id: Optional[int] = None
+    changed_by_username: Optional[str] = None
+    changed_by_rep_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ManufacturerWarrantyClaimUpdate(BaseModel):
+    outcome: Optional[str] = None
+    date_returned: Optional[date] = None
+    tracking_reference: Optional[str] = None
+    notes: Optional[str] = None
+    unit_status: Optional[str] = None
+    amount_charged_by_technician: Optional[Decimal] = None
 
 
 class TechnicianCreate(BaseModel):

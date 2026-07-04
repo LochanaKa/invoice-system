@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { Search, RefreshCw, AlertTriangle, Clock, ListChecks, Package, Link as LinkIcon } from "lucide-react";
 import { getSerialFullHistory } from "../services/api";
 
@@ -31,6 +32,30 @@ export default function SerialLookup() {
   const [history, setHistory] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    const s = location?.state?.serial;
+    if (s) {
+      setSerial(s);
+      // auto-run search
+      (async () => {
+        setError(null);
+        setHistory(null);
+        setLoading(true);
+        try {
+          const data = await getSerialFullHistory(s);
+          setHistory(data);
+        } catch (err) {
+          const detail = err?.response?.data?.detail || err?.message || "Could not load serial history.";
+          setError(detail);
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location?.state?.serial]);
 
   async function handleSearch(e) {
     e.preventDefault();

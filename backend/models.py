@@ -15,7 +15,7 @@ The `relationship()` calls let you navigate between tables in Python:
 from decimal import Decimal
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Boolean,
-    Date, DateTime, Numeric, Text, ForeignKey, func
+    Date, DateTime, Numeric, Text, ForeignKey, func, CheckConstraint
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, Session
@@ -151,6 +151,9 @@ class StockItem(Base):
     StockUnits with status='in_stock' for this item.
     """
     __tablename__ = "stock_items"
+    __table_args__ = (
+        CheckConstraint("qty_on_hand >= 0", name="ck_stock_items_qty_on_hand_nonnegative"),
+    )
 
     id              = Column(Integer,     primary_key=True)
     category_id     = Column(Integer,     ForeignKey("stock_categories.id"), nullable=False)
@@ -250,7 +253,7 @@ class StockUnit(Base):
 
     id                  = Column(BigInteger,    primary_key=True)
     receipt_item_id     = Column(BigInteger,    ForeignKey("stock_receipt_items.id"), nullable=False)
-    stock_item_id       = Column(Integer,       ForeignKey("stock_items.id"),         nullable=False)
+    stock_item_id       = Column(Integer,       ForeignKey("stock_items.id"),         nullable=False, index=True)
     serial_number              = Column(String(200),   nullable=False, unique=True, index=True)
     status                     = Column(String(30),    nullable=False, default="in_stock")
     sold_invoice_item_id       = Column(BigInteger,   ForeignKey("invoice_items.id"),       nullable=True)
@@ -259,6 +262,7 @@ class StockUnit(Base):
     manufacturer_warranty_months = Column(Integer,     nullable=True)
     created_at                 = Column(DateTime,      server_default=func.now())
     updated_at                 = Column(DateTime,      server_default=func.now(), onupdate=func.now())
+    replacement_for_unit_id    = Column(BigInteger,    ForeignKey("stock_units.id"), nullable=True)
 
     receipt_item = relationship("StockReceiptItem")
     stock_item   = relationship("StockItem")
@@ -326,6 +330,42 @@ class RepairJob(Base):
     linked_job_card = relationship("JobCard", back_populates="repair_jobs")
 
 
+class ManufacturerWarrantyClaim(Base):
+    __tablename__ = "manufacturer_warranty_claims"
+
+    id                   = Column(BigInteger, primary_key=True)
+    stock_unit_id        = Column(BigInteger, ForeignKey("stock_units.id"), nullable=False)
+    supplier_id          = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
+    linked_job_card_id   = Column(Integer, ForeignKey("job_cards.id"), nullable=True, index=True)
+    date_sent            = Column(Date, nullable=False)
+    expected_return_date = Column(Date, nullable=True)
+    date_returned        = Column(Date, nullable=True)
+    outcome              = Column(String(30), nullable=False, default="pending")
+    # outcome values: 'pending' | 'repaired' | 'replaced_by_manufacturer' | 'rejected'
+    tracking_reference   = Column(String(100), nullable=True)
+    notes                = Column(Text, nullable=True)
+    created_at           = Column(DateTime, server_default=func.now())
+    updated_at           = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    stock_unit      = relationship("StockUnit")
+    supplier        = relationship("Supplier")
+    linked_job_card = relationship("JobCard")
+    histories = relationship("ManufacturerWarrantyClaimHistory", back_populates="claim", order_by="desc(ManufacturerWarrantyClaimHistory.id)")
+
+    @property
+    def changed_by_rep_name(self):
+        if not self.histories:
+            return None
+        latest = self.histories[0]
+        if latest.changed_by_rep:
+            return latest.changed_by_rep.name
+        if latest.changed_by_user and latest.changed_by_user.rep:
+            return latest.changed_by_user.rep.name
+        if latest.changed_by_user:
+            return latest.changed_by_user.username
+        return None
+
+
 class Route(Base):
     __tablename__ = "routes"
 
@@ -336,6 +376,23 @@ class Route(Base):
 
     # One route → many customers
     customers = relationship("Customer", back_populates="route")
+
+
+class ManufacturerWarrantyClaimHistory(Base):
+    __tablename__ = "manufacturer_warranty_claim_histories"
+
+    id = Column(BigInteger, primary_key=True)
+    claim_id = Column(BigInteger, ForeignKey("manufacturer_warranty_claims.id"), nullable=False)
+    old_outcome = Column(String(30), nullable=True)
+    new_outcome = Column(String(30), nullable=True)
+    note = Column(Text, nullable=True)
+    changed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    changed_by_rep_id = Column(Integer, ForeignKey("reps.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    claim = relationship("ManufacturerWarrantyClaim", back_populates="histories")
+    changed_by_user = relationship("User")
+    changed_by_rep = relationship("Rep")
 
 
 class Rep(Base):
