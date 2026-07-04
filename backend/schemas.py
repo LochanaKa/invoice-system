@@ -560,9 +560,17 @@ class RepairJobHistoryOut(BaseModel):
     amount_charged_by_technician: Optional[Decimal] = None
     outcome:                str
     linked_job_card_id:     Optional[int] = None
+    job_type:               Optional[str] = None
+    linked_sales_invoice_id: Optional[int] = None
+    customer_id:            Optional[int] = None
+    rep_id:                 Optional[int] = None
     created_at:             Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class JobCardLinkInvoiceUpdate(BaseModel):
+    invoice_id: int
 
 
 class ManufacturerWarrantyClaimOut(BaseModel):
@@ -617,6 +625,12 @@ class ManufacturerWarrantyClaimUpdate(BaseModel):
     tracking_reference: Optional[str] = None
     notes: Optional[str] = None
     unit_status: Optional[str] = None
+    amount_charged_by_technician: Optional[Decimal] = None
+
+
+class RepairJobUpdate(BaseModel):
+    outcome: Optional[str] = None
+    date_returned: Optional[date] = None
     amount_charged_by_technician: Optional[Decimal] = None
 
 

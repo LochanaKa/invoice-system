@@ -155,11 +155,14 @@ def update_manufacturer_claim(claim_id: int, payload: ManufacturerWarrantyClaimU
         claim.tracking_reference = updates["tracking_reference"].strip() if updates["tracking_reference"] else None
     if "notes" in updates:
         claim.notes = updates["notes"].strip() if updates["notes"] else None
-    # Optional: update unit status if requested
-    if "unit_status" in updates and updates.get("unit_status") and claim.stock_unit_id:
+
+    unit = None
+    if claim.stock_unit_id:
         unit = db.query(StockUnit).filter(StockUnit.id == claim.stock_unit_id).first()
-        if unit and unit.status != updates.get("unit_status"):
-            unit.record_status_change(db, updates.get("unit_status"), note=f"Updated via manufacturer claim #{claim.id}")
+
+    requested_unit_status = updates.get("unit_status")
+    if requested_unit_status and unit and unit.status != requested_unit_status:
+        unit.record_status_change(db, requested_unit_status, note=f"Updated via manufacturer claim #{claim.id}", changed_by_rep_id=current_user.rep_id if current_user and getattr(current_user, "rep_id", None) else None)
 
     # Optional: update technician charge on linked repair job
     if "amount_charged_by_technician" in updates and updates.get("amount_charged_by_technician") is not None:
@@ -184,25 +187,21 @@ def update_manufacturer_claim(claim_id: int, payload: ManufacturerWarrantyClaimU
         handled_by_rep_id = current_user.rep_id if current_user and getattr(current_user, "rep_id", None) else None
         handled_by_user_id = current_user.id if current_user and getattr(current_user, "id", None) else None
 
-        if "outcome" in updates and updates.get("outcome") == "repaired":
-            if claim.stock_unit_id:
-                unit = db.query(StockUnit).filter(StockUnit.id == claim.stock_unit_id).first()
-                if unit:
-                    unit.record_status_change(db, "in_stock", note=f"Returned from manufacturer claim #{claim.id}", changed_by_rep_id=handled_by_rep_id)
+        if "outcome" in updates and updates.get("outcome") == "repaired" and not requested_unit_status:
+            if unit:
+                unit.record_status_change(db, "in_stock", note=f"Returned from manufacturer claim #{claim.id}", changed_by_rep_id=handled_by_rep_id)
         # If outcome == 'replaced_by_manufacturer', keep the stock_unit status as-is — handled elsewhere.
-        elif "outcome" in updates:
+        elif "outcome" in updates and not requested_unit_status:
             # For other outcome updates we still insert an explicit history note recording the change
-            if claim.stock_unit_id:
-                unit = db.query(StockUnit).filter(StockUnit.id == claim.stock_unit_id).first()
-                if unit:
-                    hist = StockUnitStatusHistory(
-                        stock_unit_id=unit.id,
-                        old_status=unit.status,
-                        new_status=unit.status,
-                        note=f"Manufacturer claim #{claim.id} outcome updated to {updates.get('outcome')}",
-                        changed_by_rep_id=handled_by_rep_id,
-                    )
-                    db.add(hist)
+            if unit:
+                hist = StockUnitStatusHistory(
+                    stock_unit_id=unit.id,
+                    old_status=unit.status,
+                    new_status=unit.status,
+                    note=f"Manufacturer claim #{claim.id} outcome updated to {updates.get('outcome')}",
+                    changed_by_rep_id=handled_by_rep_id,
+                )
+                db.add(hist)
 
         # Add audit row for claim change
         try:

@@ -19,7 +19,7 @@ function formatDate(d) {
 export default function ManufacturerWarranty() {
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterOutcome, setFilterOutcome] = useState("pending");
+  const [filterOutcome, setFilterOutcome] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [page, setPage] = useState(0);

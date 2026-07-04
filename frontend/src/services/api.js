@@ -250,6 +250,12 @@ export const deactivateTechnician = (id) =>
 export const getTechnicianRepairHistory = (technicianId) =>
   api.get(`/technicians/${technicianId}/repair-jobs`).then((r) => r.data);
 
+export const updateRepairJob = (id, data) =>
+  api.patch(`/repair-jobs/${id}`, data).then((r) => r.data);
+
+export const deleteRepairJob = (id) =>
+  api.delete(`/repair-jobs/${id}`).then((r) => r.data);
+
 export const createJobCard = (data) =>
   api.post("/jobs", data).then((r) => r.data);
 
@@ -262,12 +268,18 @@ export const getJobCard = (id) =>
 export const updateJobCard = (id, data) =>
   api.patch(`/jobs/${id}`, data).then((r) => r.data);
 
+export const linkJobCardInvoice = (id, data) =>
+  api.patch(`/job-cards/${id}/link-invoice`, data).then((r) => r.data);
+
 export const deleteJobCard = (id) =>
   api.delete(`/jobs/${id}`).then((r) => r.data);
 
 // Run workflow action on a job card (uses backend /jobs/{id}/action endpoint)
 export const runJobCardAction = (jobCardId, payload) =>
   api.post(`/jobs/${jobCardId}/action`, payload).then((r) => r.data);
+
+export const getAvailableReplacementUnits = (unitId) =>
+  api.get(`/stock-units/${unitId}/available-replacements`).then((r) => r.data);
 
 // Fetch a stock unit by serial (allow any status) — used to show updated status
 export const getStockUnitBySerial = (serialNumber) =>

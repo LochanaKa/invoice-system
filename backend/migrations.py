@@ -488,6 +488,10 @@ def run_startup_migrations(engine: Engine) -> None:
             conn.execute(text("ALTER TABLE stock_unit_status_history ALTER COLUMN new_status TYPE VARCHAR(30)"))
         except Exception:
             pass
+        try:
+            conn.execute(text("ALTER TABLE repair_jobs ALTER COLUMN outcome TYPE VARCHAR(50)"))
+        except Exception:
+            pass
         conn.execute(text(
             "CREATE TABLE IF NOT EXISTS technicians ("
             "id SERIAL PRIMARY KEY, "
@@ -507,7 +511,7 @@ def run_startup_migrations(engine: Engine) -> None:
             "date_sent DATE NOT NULL, "
             "date_returned DATE, "
             "amount_charged_by_technician NUMERIC(12, 2), "
-            "outcome VARCHAR(20) NOT NULL DEFAULT 'pending', "
+            "outcome VARCHAR(50) NOT NULL DEFAULT 'pending', "
             "linked_job_card_id INTEGER REFERENCES job_cards(id), "
             "created_at TIMESTAMP DEFAULT NOW()"
             ")"

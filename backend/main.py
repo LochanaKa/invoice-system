@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 
 from routers import invoices, customers, dashboard, settings, pdf_router, vat_report, all_inc_report, reps, routes, technicians, backup_router, preferences, auth_router, jobs
-from routers import suppliers, stock_categories, stock_items, stock_receipts, stock_units, manufacturer_warranty, debug
+from routers import suppliers, stock_categories, stock_items, stock_receipts, stock_units, manufacturer_warranty, repair_jobs, debug
 from database import engine
 from models import Base
 from migrations import run_startup_migrations
@@ -76,10 +76,12 @@ app.include_router(vat_report.router, prefix="/api", **protected) #  ← VAT rep
 app.include_router(all_inc_report.router, prefix="/api", **protected) #  ← All-Inclusive report
 app.include_router(reps.router,       prefix="/api", **protected) #  ← Staff management
 app.include_router(technicians.router, prefix="/api", **protected) #  ← Technicians directory
+app.include_router(repair_jobs.router, prefix="/api", **protected) #  ← Repair job updates/deletes
 app.include_router(routes.router,     prefix="/api", **protected) #  ← Routes CRUD
 app.include_router(preferences.router, prefix="/api", **protected) #  ← Dashboard layout preferences
 app.include_router(backup_router.router, prefix="/api", **protected) #  ← Backup management
 app.include_router(jobs.router, prefix="/api", **protected) #  ← Job cards / repair tickets
+app.include_router(jobs.job_card_router, prefix="/api", **protected) #  ← Job-card invoice linking
 
 # ── Stock management routers ──────────────────────────────────────
 # Admin-only: full catalog + GRN management

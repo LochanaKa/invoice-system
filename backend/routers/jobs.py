@@ -6,12 +6,13 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from database import get_db
-from models import InvoiceItem, JobCard, Rep, StockUnit, RepairJob, StockReceiptItem, StockReceipt, ManufacturerWarrantyClaim, StockItem, ManufacturerWarrantyClaimHistory
-from schemas import JobCardCreate, JobCardResponse, JobCardUpdate
+from models import Invoice, InvoiceItem, JobCard, Rep, StockUnit, RepairJob, StockReceiptItem, StockReceipt, ManufacturerWarrantyClaim, StockItem, ManufacturerWarrantyClaimHistory
+from schemas import JobCardCreate, JobCardLinkInvoiceUpdate, JobCardResponse, JobCardUpdate
 from schemas import JobActionIn
 from warranty_utils import evaluate_job_card_warranty
 
 router = APIRouter(prefix="/jobs", tags=["Job Cards"])
+job_card_router = APIRouter(prefix="/job-cards", tags=["Job Cards"])
 
 
 @router.get("", response_model=List[JobCardResponse])
@@ -238,6 +239,22 @@ def job_card_action(job_card_id: int, payload: JobActionIn, db: Session = Depend
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@job_card_router.patch("/{job_card_id}/link-invoice", response_model=JobCardResponse)
+def link_invoice_to_job_card(job_card_id: int, payload: JobCardLinkInvoiceUpdate, db: Session = Depends(get_db)):
+    card = db.query(JobCard).filter(JobCard.id == job_card_id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Job card not found.")
+
+    invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+
+    card.linked_sales_invoice_id = payload.invoice_id
+    db.commit()
+    db.refresh(card)
+    return card
 
 
 @router.patch("/{job_card_id}", response_model=JobCardResponse)

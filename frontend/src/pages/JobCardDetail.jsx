@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, RefreshCw, Save, ClipboardList, FileText, Trash2 } from "lucide-react";
-import { getJobCard, updateJobCard, deleteJobCard, getReps, runJobCardAction, getTechnicians, getStockUnitBySerial } from "../services/api";
+import { getJobCard, updateJobCard, deleteJobCard, getReps, runJobCardAction, getTechnicians, getStockUnitBySerial, getAvailableReplacementUnits } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
 const statusOptions = ["NEW", "IN_PROGRESS", "READY_FOR_PICKUP", "COMPLETED", "CANCELLED"];
@@ -31,6 +31,10 @@ export default function JobCardDetail() {
   const [dateSent, setDateSent] = useState("");
   const [amountCharged, setAmountCharged] = useState("");
   const [pendingAction, setPendingAction] = useState(null);
+  const [replacementUnits, setReplacementUnits] = useState([]);
+  const [selectedReplacementUnitId, setSelectedReplacementUnitId] = useState("");
+  const [replacementLoading, setReplacementLoading] = useState(false);
+  const [showReplacementModal, setShowReplacementModal] = useState(false);
   const [stockUnitStatus, setStockUnitStatus] = useState(null);
   const [handledByRepId, setHandledByRepId] = useState("");
   const { user } = useAuth();
@@ -94,6 +98,28 @@ export default function JobCardDetail() {
       return;
     }
 
+    if (action === "replace_under_warranty") {
+      if (!card?.stock_unit_id) {
+        setActionError("Unable to determine the original stock unit for replacement.");
+        return;
+      }
+      setPendingAction(action);
+      setShowReplacementModal(true);
+      setReplacementLoading(true);
+      setActionError(null);
+      setSelectedReplacementUnitId("");
+      try {
+        const units = await getAvailableReplacementUnits(card.stock_unit_id);
+        setReplacementUnits(units || []);
+      } catch (err) {
+        setReplacementUnits([]);
+        setActionError(err.response?.data?.detail || err.message || "Failed to load replacement units.");
+      } finally {
+        setReplacementLoading(false);
+      }
+      return;
+    }
+
     // Simple actions: POST to /jobs/{id}/action
     setWorkflowSaving(true);
     setActionError(null);
@@ -103,7 +129,6 @@ export default function JobCardDetail() {
         // Include which internal rep handled this transition
         payload.handled_by_rep_id = handledByRepId ? Number(handledByRepId) : user?.rep_id;
       }
-      // TODO: replace_under_warranty may later require extra inputs — revisit
       const updated = await runJobCardAction(id, payload);
       setCard(updated);
       // refresh stock unit status if linked
@@ -144,6 +169,41 @@ export default function JobCardDetail() {
       setSelectedTechnicianId("");
       setDateSent("");
       setAmountCharged("");
+      // refresh stock unit status if linked
+      if (updated && updated.serial_number) {
+        try {
+          const su = await getStockUnitBySerial(updated.serial_number);
+          setStockUnitStatus(su.status);
+        } catch (_) {
+          setStockUnitStatus(null);
+        }
+      }
+    } catch (err) {
+      setActionError(err.response?.data?.detail || err.message || "Failed to apply action.");
+    } finally {
+      setWorkflowSaving(false);
+    }
+  };
+
+  const submitReplacementAction = async () => {
+    if (!pendingAction) return;
+    if (!selectedReplacementUnitId) {
+      setActionError("Please select a replacement unit.");
+      return;
+    }
+    setWorkflowSaving(true);
+    setActionError(null);
+    try {
+      const payload = {
+        action: pendingAction,
+        replacement_stock_unit_id: Number(selectedReplacementUnitId),
+      };
+      const updated = await runJobCardAction(id, payload);
+      setCard(updated);
+      setShowReplacementModal(false);
+      setPendingAction(null);
+      setSelectedReplacementUnitId("");
+      setReplacementUnits([]);
       // refresh stock unit status if linked
       if (updated && updated.serial_number) {
         try {
@@ -446,6 +506,37 @@ export default function JobCardDetail() {
                     <div className="flex justify-end gap-2">
                       <button onClick={() => { setShowTechModal(false); setPendingAction(null); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">Cancel</button>
                       <button onClick={submitTechnicianAction} disabled={workflowSaving} className="rounded-lg bg-[#1F3C8A] px-3 py-2 text-sm font-medium text-white">{workflowSaving ? "Submitting…" : "Submit"}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {showReplacementModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-lg p-4 w-full max-w-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Select replacement unit</div>
+                    <button onClick={() => { setShowReplacementModal(false); setPendingAction(null); setReplacementUnits([]); }} className="text-sm text-gray-500">Close</button>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <label className="block text-xs text-gray-500">Replacement unit</label>
+                      <select value={selectedReplacementUnitId} onChange={(e) => setSelectedReplacementUnitId(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
+                        <option value="">Select replacement serial</option>
+                        {replacementLoading ? (
+                          <option value="">Loading available units…</option>
+                        ) : replacementUnits.length > 0 ? (
+                          replacementUnits.map((unit) => (
+                            <option key={unit.id} value={unit.id}>{unit.serial_number} — {unit.brand} {unit.model}</option>
+                          ))
+                        ) : (
+                          <option value="">No replacement units available</option>
+                        )}
+                      </select>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => { setShowReplacementModal(false); setPendingAction(null); setReplacementUnits([]); }} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">Cancel</button>
+                      <button onClick={submitReplacementAction} disabled={workflowSaving || replacementLoading} className="rounded-lg bg-[#1F3C8A] px-3 py-2 text-sm font-medium text-white">{workflowSaving ? "Submitting…" : "Submit"}</button>
                     </div>
                   </div>
                 </div>

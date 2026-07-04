@@ -9,9 +9,9 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate }         from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Plus, Trash2, Info, Barcode, Search, AlertTriangle, CheckCircle2, Loader2, Package } from "lucide-react";
-import { getLookups, getCustomers, createInvoice, getSettings, getNextInvoiceNumber, createCustomer, createRoute, authFetch, lookupSerial, getStockItems } from "../services/api";
+import { getLookups, getCustomers, createInvoice, getSettings, getNextInvoiceNumber, createCustomer, createRoute, authFetch, lookupSerial, getStockItems, linkJobCardInvoice } from "../services/api";
 import { API_BASE } from "../config";
 import { round2, calculateItemRow, calculateInvoiceTotals } from "../utils/invoiceCalc";
 
@@ -26,12 +26,13 @@ const fmt = (n) => Number(n || 0).toLocaleString("en-LK", {
 
 export default function NewInvoice() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
     invoice_number:   "",
     invoice_category: "ALL_INC",
-    // service_type is always SALE on this page — hard-coded in the payload
+    service_type:     "SALE",
     invoice_date:     new Date().toISOString().split("T")[0],
     due_date:         "",
     po_number:        "",
@@ -85,6 +86,10 @@ export default function NewInvoice() {
   const [serialLoading, setSerialLoading] = useState(false);
   const serialInputRef = useRef(null);
 
+  const incomingPrefill = location.state?.prefill;
+  const incomingLinkJobCardId = location.state?.link_job_card_id;
+  const incomingReturnTo = location.state?.return_to;
+
   // ── Non-serialized stock picker state ────────────────────────────────────
   const [stockSearch,        setStockSearch]        = useState("");
   const [stockResults,       setStockResults]       = useState([]);
@@ -93,6 +98,13 @@ export default function NewInvoice() {
   const [pendingStockItem,   setPendingStockItem]   = useState(null);  // item chosen, awaiting qty
   const [pendingStockQty,    setPendingStockQty]    = useState("1");
   const pendingQtyRef = useRef(null);
+
+  const buildPrefillDescription = useCallback((prefill) => {
+    if (prefill?.description?.trim()) return prefill.description.trim();
+    const stockUnit = prefill?.stock_unit || null;
+    const parts = [stockUnit?.brand, stockUnit?.model, stockUnit?.serial_number || stockUnit?.serial_no].filter(Boolean);
+    return parts.length ? `Repair: ${parts.join(" / ")}` : "Repair service";
+  }, []);
 
   // ── On mount: load lookups + global settings defaults ────────────────────
   useEffect(() => {
@@ -138,6 +150,19 @@ export default function NewInvoice() {
         setSettingsLoaded(true);
       });
   }, []);
+
+  useEffect(() => {
+    if (!incomingPrefill) return;
+
+    const prefillDescription = buildPrefillDescription(incomingPrefill);
+    setForm((f) => ({
+      ...f,
+      service_type: "REPAIR",
+      customer_id: incomingPrefill.customer_id != null ? String(incomingPrefill.customer_id) : f.customer_id,
+      rep_id: incomingPrefill.rep_id != null ? String(incomingPrefill.rep_id) : f.rep_id,
+    }));
+    setItems([{ ...EMPTY_ITEM, description: prefillDescription, serial_no: incomingPrefill.stock_unit?.serial_number || incomingPrefill.stock_unit?.serial_no || "" }]);
+  }, [incomingPrefill, buildPrefillDescription]);
 
   // ── Fetch next invoice number when category changes (service_type is always SALE) ─
   useEffect(() => {
@@ -492,7 +517,7 @@ export default function NewInvoice() {
       const payload = {
         invoice_number:   form.invoice_number,
         invoice_category: form.invoice_category,
-        service_type:     "SALE",   // hard-coded — this page is Sales only
+        service_type:     form.service_type || "SALE",
         invoice_date:     form.invoice_date,
         due_date:         form.due_date    || null,
         po_number:        form.po_number   || null,
@@ -531,6 +556,20 @@ export default function NewInvoice() {
       const inv = await createInvoice(payload);
       // Keep the created invoice in local state so the Print button can use it.
       setCreatedInvoice(inv);
+
+      if (incomingLinkJobCardId) {
+        try {
+          await linkJobCardInvoice(incomingLinkJobCardId, { invoice_id: inv.id });
+          if (incomingReturnTo) {
+            navigate(incomingReturnTo);
+            return;
+          }
+        } catch (linkErr) {
+          console.error("Failed to link invoice to job card", linkErr);
+          setError("Invoice was created, but the job card could not be linked automatically.");
+          return;
+        }
+      }
       // Note: we no longer navigate away immediately — user can print or continue editing.
     } catch (err) {
       setError(

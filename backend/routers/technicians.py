@@ -9,7 +9,7 @@ from sqlalchemy import or_, desc
 from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
-from models import RepairJob, Technician
+from models import InvoiceItem, JobCard, RepairJob, Technician
 from schemas import (
     RepairJobHistoryOut,
     TechnicianCreate,
@@ -127,11 +127,28 @@ def get_technician_repair_history(technician_id: int, db: Session = Depends(get_
 
     jobs = (
         db.query(RepairJob)
-        .options(joinedload(RepairJob.stock_unit))
+        .options(
+            joinedload(RepairJob.stock_unit),
+            joinedload(RepairJob.linked_job_card).joinedload(JobCard.linked_sales_invoice),
+        )
         .filter(RepairJob.technician_id == technician_id)
         .order_by(desc(RepairJob.date_sent), desc(RepairJob.id))
         .all()
     )
+
+    def _get_customer_and_rep_ids(job: RepairJob):
+        if job.linked_job_card_id and job.linked_job_card and job.linked_job_card.linked_sales_invoice:
+            return job.linked_job_card.linked_sales_invoice.customer_id, job.linked_job_card.linked_sales_invoice.rep_id
+
+        if job.stock_unit and job.stock_unit.sold_invoice_item_id:
+            invoice_item = db.query(InvoiceItem).filter(InvoiceItem.id == job.stock_unit.sold_invoice_item_id).first()
+            if invoice_item and invoice_item.invoice:
+                return invoice_item.invoice.customer_id, invoice_item.invoice.rep_id
+
+        if job.linked_job_card_id and job.linked_job_card and job.linked_job_card.received_by_staff_id:
+            return None, job.linked_job_card.received_by_staff_id
+
+        return None, None
 
     return [
         RepairJobHistoryOut(
@@ -143,6 +160,10 @@ def get_technician_repair_history(technician_id: int, db: Session = Depends(get_
             amount_charged_by_technician=job.amount_charged_by_technician,
             outcome=job.outcome,
             linked_job_card_id=job.linked_job_card_id,
+            job_type=job.linked_job_card.job_type if job.linked_job_card_id and job.linked_job_card else None,
+            linked_sales_invoice_id=job.linked_job_card.linked_sales_invoice_id if job.linked_job_card_id and job.linked_job_card else None,
+            customer_id=_get_customer_and_rep_ids(job)[0],
+            rep_id=_get_customer_and_rep_ids(job)[1],
             created_at=job.created_at,
         )
         for job in jobs

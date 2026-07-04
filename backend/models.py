@@ -321,7 +321,7 @@ class RepairJob(Base):
     date_sent                    = Column(Date, nullable=False)
     date_returned                = Column(Date, nullable=True)
     amount_charged_by_technician = Column(Numeric(12, 2), nullable=True)
-    outcome                      = Column(String(20), nullable=False, default="pending")
+    outcome                      = Column(String(50), nullable=False, default="pending")
     linked_job_card_id           = Column(Integer, ForeignKey("job_cards.id"), nullable=True)
     created_at                   = Column(DateTime, server_default=func.now())
 
