@@ -32,12 +32,16 @@ export default function ManufacturerWarranty() {
   const [techCharge, setTechCharge] = useState("");
   const [serialHistory, setSerialHistory] = useState(null);
   const [serialHistoryLoading, setSerialHistoryLoading] = useState(false);
-  const [claimHistory, setClaimHistory] = useState(null);
+  const [claimHistory, setClaimHistory] = useState([]);
   const [claimHistoryLoading, setClaimHistoryLoading] = useState(false);
   const [historyLoadError, setHistoryLoadError] = useState(null);
   const navigate = useNavigate();
   const { user } = useAuth();
   const canEdit = Boolean(user?.is_admin);
+
+  const safeClaims = Array.isArray(claims) ? claims : [];
+  const safeClaimHistory = Array.isArray(claimHistory) ? claimHistory : [];
+  const safeSerialHistoryTimeline = Array.isArray(serialHistory?.timeline) ? serialHistory.timeline : [];
 
   useEffect(() => {
     loadClaims();
@@ -73,7 +77,6 @@ export default function ManufacturerWarranty() {
     if (!selected || !selected.stock_unit_serial_number) {
       setSerialHistory(null);
       setUnitStatus("");
-      setTechCharge("");
       return;
     }
     let mounted = true;
@@ -96,7 +99,7 @@ export default function ManufacturerWarranty() {
 
   useEffect(() => {
     if (!selected) {
-      setClaimHistory(null);
+      setClaimHistory([]);
       return;
     }
 
@@ -105,12 +108,12 @@ export default function ManufacturerWarranty() {
     setHistoryLoadError(null);
     getManufacturerClaimHistory(selected.id)
       .then((history) => {
-        if (mounted) setClaimHistory(history);
+        if (mounted) setClaimHistory(history || []);
       })
       .catch((err) => {
         console.error("Failed to load claim history", err);
         if (mounted) {
-          setClaimHistory(null);
+          setClaimHistory([]);
           setHistoryLoadError("Unable to load claim history.");
         }
       })
@@ -165,7 +168,6 @@ export default function ManufacturerWarranty() {
         tracking_reference: selected.tracking_reference || null,
         notes: selected.notes || null,
         unit_status: unitStatus || undefined,
-        amount_charged_by_technician: techCharge !== "" ? Number(techCharge) : undefined,
       };
       await updateManufacturerWarrantyClaim(selected.id, payload);
       closeEditor();
@@ -268,7 +270,7 @@ export default function ManufacturerWarranty() {
           <div className="p-10 text-center text-sm text-slate-500">No claims found.</div>
         ) : (
           <div>
-            {claims.map((c) => (
+            {safeClaims.map((c) => (
               <div
                 key={c.id}
                 role="button"
@@ -346,7 +348,7 @@ export default function ManufacturerWarranty() {
       {selected && (
         <>
         <div className="fixed inset-0 z-[9999] flex min-h-screen items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-6" onClick={closeEditor}>
-          <div className="relative z-[10000] w-full max-w-2xl overflow-hidden rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-900/5 sm:p-8" onClick={(e) => e.stopPropagation()}>
+          <div className="relative z-[10000] w-full max-w-[90vw] xl:max-w-[80rem] max-h-[90vh] overflow-auto rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-900/5 sm:p-8" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">Update Claim #{selected.id}</h2>
@@ -413,11 +415,6 @@ export default function ManufacturerWarranty() {
                 </select>
               </label>
 
-              <label className="space-y-2 text-sm font-medium text-slate-700">
-                Technician charge (Rs.)
-                <input type="number" step="0.01" value={techCharge} onChange={(e) => setTechCharge(e.target.value)} disabled={!canEdit} className="w-full rounded-xl border px-3 py-2 text-sm disabled:bg-slate-50" />
-              </label>
-
               {validationError && (
                 <div className="col-span-full rounded-2xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
                   {validationError}
@@ -435,13 +432,10 @@ export default function ManufacturerWarranty() {
                 {selected?.stock_unit_serial_number && (
                   <button type="button" onClick={() => navigate('/serial-history', { state: { serial: selected.stock_unit_serial_number } })} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">Open full serial history</button>
                 )}
-                {selected?.linked_job_card_id && (
-                  <button type="button" onClick={() => navigate(`/invoices/new-repair?job_card_id=${selected.linked_job_card_id}`)} className="ml-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">Create technician invoice</button>
-                )}
               </div>
             </form>
 
-            <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
+            <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
               <div>
                 <h3 className="text-sm font-semibold text-[#1F3C8A]">Unit Timeline</h3>
                 {serialHistoryLoading ? (
@@ -450,7 +444,7 @@ export default function ManufacturerWarranty() {
                   <div className="text-sm text-slate-500 mt-2">No history available for this unit.</div>
                 ) : (
                   <div className="mt-2 space-y-2">
-                    {serialHistory.timeline.map((ev) => (
+                    {safeSerialHistoryTimeline.map((ev) => (
                       <div key={`${ev.type}-${ev.id}`} className="rounded-lg border border-gray-100 bg-slate-50 p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-sm font-semibold text-gray-900">{ev.title}</div>
@@ -476,11 +470,11 @@ export default function ManufacturerWarranty() {
                 </div>
                 {claimHistoryLoading ? (
                   <div className="mt-3 text-sm text-slate-500">Loading claim history…</div>
-                ) : claimHistory?.length === 0 ? (
+                ) : claimHistory.length === 0 ? (
                   <div className="mt-3 text-sm text-slate-500">No claim history available yet.</div>
                 ) : (
                   <div className="mt-3 space-y-3">
-                    {claimHistory.map((entry) => (
+                    {safeClaimHistory.map((entry) => (
                       <div key={entry.id} className="rounded-2xl border border-slate-200 bg-white p-3">
                         <div className="flex items-start justify-between gap-4">
                           <div>
