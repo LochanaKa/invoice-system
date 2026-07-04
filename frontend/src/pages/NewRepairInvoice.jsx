@@ -142,11 +142,10 @@ export default function NewRepairInvoice() {
     const descVal = card.issue_description
       ? `Repair: ${card.device_name} — ${card.issue_description}`
       : `Repair: ${card.device_name}`;
-    const isThirdPartyRepair = String(card.status || "").toUpperCase().includes("THIRD_PARTY");
     const technicianCost = card.latest_repair_job_amount_charged_by_technician != null
       ? Number(card.latest_repair_job_amount_charged_by_technician)
       : null;
-    const prefilledRate = isThirdPartyRepair && technicianCost !== null
+    const prefilledRate = technicianCost !== null
       ? String(round2(technicianCost))
       : "";
 

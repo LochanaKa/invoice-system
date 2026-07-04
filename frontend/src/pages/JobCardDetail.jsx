@@ -124,6 +124,10 @@ export default function JobCardDetail() {
 
   const submitTechnicianAction = async () => {
     if (!pendingAction) return;
+    if (!selectedTechnicianId) {
+      setActionError("Please select a technician.");
+      return;
+    }
     setWorkflowSaving(true);
     setActionError(null);
     try {
@@ -167,9 +171,16 @@ export default function JobCardDetail() {
     setWorkflowSaving(true);
     setActionError(null);
     try {
-      const note = (card.notes || "") + `\n[Workflow] Marked as fixed`;
-      const updated = await updateJobCard(id, { status: "READY_FOR_PICKUP", notes: note });
+      const updated = await runJobCardAction(id, { action: "mark_fixed" });
       setCard(updated);
+      if (updated && updated.serial_number) {
+        try {
+          const su = await getStockUnitBySerial(updated.serial_number);
+          setStockUnitStatus(su.status);
+        } catch (_) {
+          setStockUnitStatus(null);
+        }
+      }
     } catch (err) {
       setActionError(err.response?.data?.detail || err.message || "Failed to mark fixed.");
     } finally {

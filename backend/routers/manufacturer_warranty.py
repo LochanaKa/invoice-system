@@ -14,6 +14,28 @@ from schemas import ManufacturerWarrantyClaimHistoryOut
 router = APIRouter(prefix="/manufacturer-warranty-claims", tags=["Manufacturer Warranty Claims"]) 
 
 
+def _claim_to_out(claim: ManufacturerWarrantyClaim) -> ManufacturerWarrantyClaimOut:
+    return ManufacturerWarrantyClaimOut(
+        id=claim.id,
+        stock_unit_id=claim.stock_unit_id,
+        stock_unit_serial_number=claim.stock_unit.serial_number if claim.stock_unit else None,
+        stock_item_brand=claim.stock_unit.stock_item.brand if claim.stock_unit and claim.stock_unit.stock_item else None,
+        stock_item_model=claim.stock_unit.stock_item.model if claim.stock_unit and claim.stock_unit.stock_item else None,
+        supplier_id=claim.supplier_id,
+        supplier_name=claim.supplier.name if claim.supplier else None,
+        linked_job_card_id=claim.linked_job_card_id,
+        date_sent=claim.date_sent,
+        expected_return_date=claim.expected_return_date,
+        date_returned=claim.date_returned,
+        outcome=claim.outcome,
+        tracking_reference=claim.tracking_reference,
+        notes=claim.notes,
+        changed_by_rep_name=claim.changed_by_rep_name,
+        created_at=claim.created_at,
+        updated_at=claim.updated_at,
+    )
+
+
 @router.get("", response_model=ManufacturerWarrantyClaimPage)
 def list_manufacturer_claims(
     outcome: Optional[str] = Query(None),
@@ -52,28 +74,7 @@ def list_manufacturer_claims(
     )
 
     return ManufacturerWarrantyClaimPage(
-        items=[
-        ManufacturerWarrantyClaimOut(
-            id=c.id,
-            stock_unit_id=c.stock_unit_id,
-            stock_unit_serial_number=c.stock_unit.serial_number if c.stock_unit else None,
-            stock_item_brand=c.stock_unit.stock_item.brand if c.stock_unit and c.stock_unit.stock_item else None,
-            stock_item_model=c.stock_unit.stock_item.model if c.stock_unit and c.stock_unit.stock_item else None,
-            supplier_id=c.supplier_id,
-            supplier_name=c.supplier.name if c.supplier else None,
-            linked_job_card_id=c.linked_job_card_id,
-            date_sent=c.date_sent,
-            expected_return_date=c.expected_return_date,
-            date_returned=c.date_returned,
-            outcome=c.outcome,
-            tracking_reference=c.tracking_reference,
-            notes=c.notes,
-            changed_by_rep_name=c.changed_by_rep_name,
-            created_at=c.created_at,
-            updated_at=c.updated_at,
-        )
-        for c in claims
-        ],
+        items=[_claim_to_out(c) for c in claims],
         total=total,
         limit=limit,
         offset=offset,
@@ -96,25 +97,7 @@ def get_manufacturer_claim(claim_id: int, db: Session = Depends(get_db)):
     if not claim:
         raise HTTPException(status_code=404, detail="Manufacturer warranty claim not found.")
 
-    return ManufacturerWarrantyClaimOut(
-        id=claim.id,
-        stock_unit_id=claim.stock_unit_id,
-        stock_unit_serial_number=claim.stock_unit.serial_number if claim.stock_unit else None,
-        stock_item_brand=claim.stock_unit.stock_item.brand if claim.stock_unit and claim.stock_unit.stock_item else None,
-        stock_item_model=claim.stock_unit.stock_item.model if claim.stock_unit and claim.stock_unit.stock_item else None,
-        supplier_id=claim.supplier_id,
-        supplier_name=claim.supplier.name if claim.supplier else None,
-        linked_job_card_id=claim.linked_job_card_id,
-        date_sent=claim.date_sent,
-        expected_return_date=claim.expected_return_date,
-        date_returned=claim.date_returned,
-        outcome=claim.outcome,
-        tracking_reference=claim.tracking_reference,
-        notes=claim.notes,
-        changed_by_rep_name=claim.changed_by_rep_name,
-        created_at=claim.created_at,
-        updated_at=claim.updated_at,
-    )
+    return _claim_to_out(claim)
 
 
 @router.get("/{claim_id}/history", response_model=List[ManufacturerWarrantyClaimHistoryOut])
@@ -154,8 +137,9 @@ def update_manufacturer_claim(claim_id: int, payload: ManufacturerWarrantyClaimU
 
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
-        # Nothing to change
-        return claim
+        return _claim_to_out(claim)
+
+    old_outcome = claim.outcome
 
     if "outcome" in updates and (updates["outcome"] is None or str(updates["outcome"]).strip() == ""):
         raise HTTPException(status_code=400, detail="Please select a claim outcome.")
@@ -200,8 +184,6 @@ def update_manufacturer_claim(claim_id: int, payload: ManufacturerWarrantyClaimU
         handled_by_rep_id = current_user.rep_id if current_user and getattr(current_user, "rep_id", None) else None
         handled_by_user_id = current_user.id if current_user and getattr(current_user, "id", None) else None
 
-        old_outcome = claim.outcome
-
         if "outcome" in updates and updates.get("outcome") == "repaired":
             if claim.stock_unit_id:
                 unit = db.query(StockUnit).filter(StockUnit.id == claim.stock_unit_id).first()
@@ -240,26 +222,7 @@ def update_manufacturer_claim(claim_id: int, payload: ManufacturerWarrantyClaimU
 
         db.commit()
         db.refresh(claim)
-        # refresh relationships
-        db.refresh(claim)
-        return ManufacturerWarrantyClaimOut(
-            id=claim.id,
-            stock_unit_id=claim.stock_unit_id,
-            stock_unit_serial_number=claim.stock_unit.serial_number if claim.stock_unit else None,
-            stock_item_brand=claim.stock_unit.stock_item.brand if claim.stock_unit and claim.stock_unit.stock_item else None,
-            stock_item_model=claim.stock_unit.stock_item.model if claim.stock_unit and claim.stock_unit.stock_item else None,
-            supplier_id=claim.supplier_id,
-            supplier_name=claim.supplier.name if claim.supplier else None,
-            linked_job_card_id=claim.linked_job_card_id,
-            date_sent=claim.date_sent,
-            expected_return_date=claim.expected_return_date,
-            date_returned=claim.date_returned,
-            outcome=claim.outcome,
-            tracking_reference=claim.tracking_reference,
-            notes=claim.notes,
-            created_at=claim.created_at,
-            updated_at=claim.updated_at,
-        )
+        return _claim_to_out(claim)
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(exc))
@@ -277,9 +240,28 @@ def delete_manufacturer_claim(claim_id: int, current_user: User = Depends(requir
         raise HTTPException(status_code=404, detail="Manufacturer warranty claim not found.")
 
     try:
-        # Delete history rows first for clarity
+        handled_by_rep_id = current_user.rep_id if current_user and getattr(current_user, "rep_id", None) else None
+        if claim.stock_unit_id:
+            unit = db.query(StockUnit).filter(StockUnit.id == claim.stock_unit_id).first()
+            if unit and unit.status == "with_manufacturer":
+                prior = (
+                    db.query(StockUnitStatusHistory)
+                    .filter(
+                        StockUnitStatusHistory.stock_unit_id == unit.id,
+                        StockUnitStatusHistory.new_status == "with_manufacturer",
+                    )
+                    .order_by(StockUnitStatusHistory.created_at.desc())
+                    .first()
+                )
+                revert_status = prior.old_status if prior and prior.old_status else "returned_pending_check"
+                unit.record_status_change(
+                    db,
+                    revert_status,
+                    note=f"Manufacturer claim #{claim.id} deleted",
+                    changed_by_rep_id=handled_by_rep_id,
+                )
+
         db.query(ManufacturerWarrantyClaimHistory).filter(ManufacturerWarrantyClaimHistory.claim_id == claim_id).delete(synchronize_session=False)
-        # Then delete the claim
         db.delete(claim)
         db.commit()
         return {"ok": True}

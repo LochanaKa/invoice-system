@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { getManufacturerWarrantyClaims, updateManufacturerWarrantyClaim, getSerialFullHistory, getManufacturerClaimHistory, deleteManufacturerWarrantyClaim } from "../services/api";
 import { RefreshCw, Link as LinkIcon, Edit3 } from "lucide-react";
 
@@ -35,6 +36,8 @@ export default function ManufacturerWarranty() {
   const [claimHistoryLoading, setClaimHistoryLoading] = useState(false);
   const [historyLoadError, setHistoryLoadError] = useState(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canEdit = Boolean(user?.is_admin);
 
   useEffect(() => {
     loadClaims();
@@ -147,7 +150,7 @@ export default function ManufacturerWarranty() {
 
   const saveClaim = async (e) => {
     e.preventDefault();
-    if (!selected) return;
+    if (!selected || !canEdit) return;
     const validationMsg = validateClaimUpdate();
     if (validationMsg) {
       setValidationError(validationMsg);
@@ -176,7 +179,7 @@ export default function ManufacturerWarranty() {
   };
 
   const handleDeleteClaim = async () => {
-    if (!selected) return;
+    if (!selected || !canEdit) return;
     if (!window.confirm(`Delete manufacturer claim #${selected.id}? This will remove the claim and all its history.`)) return;
     try {
       setIsSaving(true);
@@ -342,10 +345,6 @@ export default function ManufacturerWarranty() {
 
       {selected && (
         <>
-        {/* small debug banner while developing */}
-        <div className="fixed left-4 top-4 z-[99999] rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-xs text-yellow-800">
-          Debug: selected id {selected?.id} — serial {selected?.stock_unit_serial_number}
-        </div>
         <div className="fixed inset-0 z-[9999] flex min-h-screen items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-6" onClick={closeEditor}>
           <div className="relative z-[10000] w-full max-w-2xl overflow-hidden rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-900/5 sm:p-8" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between">
@@ -368,10 +367,16 @@ export default function ManufacturerWarranty() {
               </div>
             )}
 
+            {!canEdit && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                View only — only administrators can update or delete manufacturer claims.
+              </div>
+            )}
+
             <form onSubmit={saveClaim} className="mt-6 grid gap-4 sm:grid-cols-2">
               <label className="space-y-2 text-sm font-medium text-slate-700">
                 Outcome
-                <select value={selected.outcome} onChange={(e) => setSelected({ ...selected, outcome: e.target.value })} className="w-full rounded-xl border px-3 py-2 text-sm">
+                <select value={selected.outcome} onChange={(e) => setSelected({ ...selected, outcome: e.target.value })} disabled={!canEdit} className="w-full rounded-xl border px-3 py-2 text-sm disabled:bg-slate-50">
                   <option value="pending">pending</option>
                   <option value="repaired">repaired</option>
                   <option value="replaced_by_manufacturer">replaced_by_manufacturer</option>
@@ -381,22 +386,22 @@ export default function ManufacturerWarranty() {
 
               <label className="space-y-2 text-sm font-medium text-slate-700">
                 Date returned
-                <input type="date" value={selected.date_returned || ""} onChange={(e) => setSelected({ ...selected, date_returned: e.target.value || null })} className="w-full rounded-xl border px-3 py-2 text-sm" />
+                <input type="date" value={selected.date_returned || ""} onChange={(e) => setSelected({ ...selected, date_returned: e.target.value || null })} disabled={!canEdit} className="w-full rounded-xl border px-3 py-2 text-sm disabled:bg-slate-50" />
               </label>
 
               <label className="col-span-full space-y-2 text-sm font-medium text-slate-700">
                 Tracking reference
-                <input type="text" value={selected.tracking_reference || ""} onChange={(e) => setSelected({ ...selected, tracking_reference: e.target.value })} className="w-full rounded-xl border px-3 py-2 text-sm" />
+                <input type="text" value={selected.tracking_reference || ""} onChange={(e) => setSelected({ ...selected, tracking_reference: e.target.value })} disabled={!canEdit} className="w-full rounded-xl border px-3 py-2 text-sm disabled:bg-slate-50" />
               </label>
 
               <label className="col-span-full space-y-2 text-sm font-medium text-slate-700">
                 Notes
-                <textarea value={selected.notes || ""} onChange={(e) => setSelected({ ...selected, notes: e.target.value })} className="w-full rounded-xl border px-3 py-2 text-sm" rows={4} />
+                <textarea value={selected.notes || ""} onChange={(e) => setSelected({ ...selected, notes: e.target.value })} disabled={!canEdit} className="w-full rounded-xl border px-3 py-2 text-sm disabled:bg-slate-50" rows={4} />
               </label>
 
               <label className="space-y-2 text-sm font-medium text-slate-700">
                 Unit status
-                <select value={unitStatus} onChange={(e) => setUnitStatus(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm">
+                <select value={unitStatus} onChange={(e) => setUnitStatus(e.target.value)} disabled={!canEdit} className="w-full rounded-xl border px-3 py-2 text-sm disabled:bg-slate-50">
                   <option value="">(no change)</option>
                   <option value="in_stock">in_stock</option>
                   <option value="with_manufacturer">with_manufacturer</option>
@@ -410,7 +415,7 @@ export default function ManufacturerWarranty() {
 
               <label className="space-y-2 text-sm font-medium text-slate-700">
                 Technician charge (Rs.)
-                <input type="number" step="0.01" value={techCharge} onChange={(e) => setTechCharge(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" />
+                <input type="number" step="0.01" value={techCharge} onChange={(e) => setTechCharge(e.target.value)} disabled={!canEdit} className="w-full rounded-xl border px-3 py-2 text-sm disabled:bg-slate-50" />
               </label>
 
               {validationError && (
@@ -420,14 +425,18 @@ export default function ManufacturerWarranty() {
               )}
 
               <div className="col-span-full flex items-center gap-3 pt-2">
-                <button type="submit" disabled={isSaving} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">{isSaving ? "Saving…" : "Save changes"}</button>
-                <button type="button" onClick={closeEditor} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600">Cancel</button>
-                <button type="button" onClick={handleDeleteClaim} disabled={isSaving} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">Delete claim</button>
+                {canEdit && (
+                  <>
+                    <button type="submit" disabled={isSaving} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">{isSaving ? "Saving…" : "Save changes"}</button>
+                    <button type="button" onClick={handleDeleteClaim} disabled={isSaving} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">Delete claim</button>
+                  </>
+                )}
+                <button type="button" onClick={closeEditor} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600">Close</button>
                 {selected?.stock_unit_serial_number && (
                   <button type="button" onClick={() => navigate('/serial-history', { state: { serial: selected.stock_unit_serial_number } })} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">Open full serial history</button>
                 )}
                 {selected?.linked_job_card_id && (
-                  <button type="button" onClick={() => navigate(`/new-repair-invoice?job_card_id=${selected.linked_job_card_id}`)} className="ml-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">Create technician invoice</button>
+                  <button type="button" onClick={() => navigate(`/invoices/new-repair?job_card_id=${selected.linked_job_card_id}`)} className="ml-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">Create technician invoice</button>
                 )}
               </div>
             </form>

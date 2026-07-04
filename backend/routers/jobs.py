@@ -143,6 +143,8 @@ def job_card_action(job_card_id: int, payload: JobActionIn, db: Session = Depend
             db.add(claim)
             # Flush to obtain claim.id for creating an audit history row
             db.flush()
+
+            handled_by = payload.handled_by_rep_id or card.assigned_to_staff_id or card.received_by_staff_id
             try:
                 hist = ManufacturerWarrantyClaimHistory(
                     claim_id=claim.id,
@@ -155,8 +157,6 @@ def job_card_action(job_card_id: int, payload: JobActionIn, db: Session = Depend
             except Exception:
                 # Best-effort: if history insert fails, continue without blocking the action
                 pass
-
-            handled_by = payload.handled_by_rep_id or card.assigned_to_staff_id or card.received_by_staff_id
             unit.record_status_change(
                 db,
                 "with_manufacturer",
@@ -172,10 +172,11 @@ def job_card_action(job_card_id: int, payload: JobActionIn, db: Session = Depend
             card.status = "IN_PROGRESS"
 
         elif action == "send_third_party_warranty":
+            if not payload.technician_id:
+                raise HTTPException(status_code=422, detail="technician_id is required for third-party warranty assignments")
             unit.record_status_change(db, "with_third_party_warranty", note=f"Sent to third-party warranty (job #{card.id})", changed_by_rep_id=card.assigned_to_staff_id or card.received_by_staff_id)
-            if payload.technician_id:
-                rj = RepairJob(stock_unit_id=unit.id, technician_id=payload.technician_id, date_sent=payload.date_sent or date.today(), amount_charged_by_technician=payload.amount_charged_by_technician, outcome="pending", linked_job_card_id=card.id)
-                db.add(rj)
+            rj = RepairJob(stock_unit_id=unit.id, technician_id=payload.technician_id, date_sent=payload.date_sent or date.today(), amount_charged_by_technician=payload.amount_charged_by_technician, outcome="pending", linked_job_card_id=card.id)
+            db.add(rj)
             card.status = "IN_PROGRESS"
 
         elif action == "replace_under_warranty":
